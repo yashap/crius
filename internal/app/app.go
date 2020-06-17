@@ -34,5 +34,5 @@ func (a *App) Initialize(user, password, dbname string) {
 
 // Run the app (start HTTP server)
 func (a *App) Run(addr string) {
-	fmt.Println("running app")
+	fmt.Println("running app (TODO: actually run it)")
 }

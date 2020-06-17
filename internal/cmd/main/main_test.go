@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -58,6 +59,47 @@ func TestGetNonExistentProduct(t *testing.T) {
 	}
 }
 
+func TestCreateProduct(t *testing.T) {
+	cleanDB()
+
+	var jsonStr = []byte(`{"name":"test product", "price":11.22}`)
+	req, _ := http.NewRequest("POST", "/product", bytes.NewBuffer(jsonStr))
+	req.Header.Set("Content-Type", "application/json")
+
+	response := executeRequest(req)
+	checkResponseCode(t, http.StatusCreated, response.Code)
+
+	var m map[string]interface{}
+	json.Unmarshal(response.Body.Bytes(), &m)
+	name := m["name"]
+	price := m["price"]
+	id := m["id"]
+
+	if name != "test product" {
+		t.Errorf("Expected product name to be 'test product'. Got '%v'", name)
+	}
+
+	if price != 11.22 {
+		t.Errorf("Expected product price to be '11.22'. Got '%v'", price)
+	}
+
+	// the id is compared to 1.0 because JSON unmarshaling converts numbers to
+	// floats, when the target is a map[string]interface{}
+	if id != 1.0 {
+		t.Errorf("Expected product ID to be '1'. Got '%v'", id)
+	}
+}
+
+func TestGetProduct(t *testing.T) {
+	cleanDB()
+	addProducts(1)
+
+	req, _ := http.NewRequest("GET", "/product/1", nil)
+	response := executeRequest(req)
+
+	checkResponseCode(t, http.StatusOK, response.Code)
+}
+
 func executeRequest(req *http.Request) *httptest.ResponseRecorder {
 	rr := httptest.NewRecorder()
 	a.Router.ServeHTTP(rr, req)
@@ -67,6 +109,23 @@ func executeRequest(req *http.Request) *httptest.ResponseRecorder {
 func checkResponseCode(t *testing.T, expected, actual int) {
 	if expected != actual {
 		t.Errorf("Expected response code %d. Got %d\n", expected, actual)
+	}
+}
+
+func addProducts(count int) {
+	if count < 1 {
+		count = 1
+	}
+
+	for i := 0; i < count; i++ {
+		_, err := a.DB.Exec(
+			`INSERT INTO products (name, price) VALUES (?, ?)`,
+			fmt.Sprintf("Product %d", i),
+			(i+1.0)*10,
+		)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 

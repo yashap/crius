@@ -27,4 +27,4 @@ TODO:
 Doing this tutorial:
   https://semaphoreci.com/community/tutorials/building-and-testing-a-rest-api-in-go-with-gorilla-mux-and-postgresql
 Left off at:
-  The test to check the response when fetching a nonexistent product can be implemented as follows
+  The test to update a product can be implemented as follows
