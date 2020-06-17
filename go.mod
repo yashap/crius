@@ -3,7 +3,8 @@ module github.com/yashap/crius
 go 1.14
 
 require (
-	golang.org/x/text v0.3.2 // indirect
-	rsc.io/quote/v3 v3.1.0
-	rsc.io/sampler v1.3.1 // indirect
+	github.com/golang-migrate/migrate/v4 v4.11.0
+	github.com/gorilla/mux v1.7.4
+	github.com/lib/pq v1.7.0
+	gopkg.in/yaml.v2 v2.3.0 // indirect
 )
