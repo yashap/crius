@@ -13,8 +13,14 @@ TODO description
 ### Dev Workflow
 
 ```bash
-make help # View available make targets
-make db/run service/run
+# View available make targets
+make help
+
+# Spin up a DB, run the app against it
+make db/run migrate/up service/run
+
+# Format code and run the unit tests
+make fmt service/test
 ```
 
 ## Creating Database Migration Scripts
@@ -22,9 +28,3 @@ make db/run service/run
 ```bash
 migrate create -ext sql -dir scripts/db/migrations -seq $file_name
 ```
-
-TODO:
-Doing this tutorial:
-  https://semaphoreci.com/community/tutorials/building-and-testing-a-rest-api-in-go-with-gorilla-mux-and-postgresql
-Left off at:
-  The test to update a product can be implemented as follows

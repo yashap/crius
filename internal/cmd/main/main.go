@@ -14,6 +14,5 @@ func main() {
 		os.Getenv("APP_DB_PASSWORD"),
 		os.Getenv("APP_DB_NAME"),
 	)
-
 	a.Run(fmt.Sprintf(":%s", os.Getenv("PORT")))
 }

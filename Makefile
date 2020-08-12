@@ -32,6 +32,11 @@ help:
 	} \
 	{ lastLine = $$0 }' $(MAKEFILE_LIST)
 
+.PHONY: format
+## Format all go code
+fmt:
+	go fmt ./...
+
 .PHONY: service/build
 ## Build the Crius HTTP server
 service/build:
@@ -58,15 +63,14 @@ db/run:
 .PHONY: migrate/up
 ## Run all DB migrations
 migrate/up:
-	migrate -database $(POSTGRESQL_URL) -path sripts/db/migrations up
+	migrate -database $(POSTGRESQL_URL) -path $(MIGRATIONS_DIR) up
 
 .PHONY: migrate/down
 ## Reverse all DB migrations
 migrate/down:
-	migrate -database $(POSTGRESQL_URL) -path sripts/db/migrations down
+	migrate -database $(POSTGRESQL_URL) -path $(MIGRATIONS_DIR) down
 
 .PHONY: migrate/new
 ## Create a new DB migration script. Must set MIGRATE_FILENAME, e.g. `MIGRATE_FILENAME=create_products_table make migrate/new`
 migrate/new:
-	migrate create -ext sql -dir sripts/db/migrations -seq $(MIGRATE_FILENAME)
-	migrate -database $(POSTGRESQL_URL) -path sripts/db/migrations down
+	migrate create -ext sql -dir $(MIGRATIONS_DIR) -seq $(MIGRATE_FILENAME)
