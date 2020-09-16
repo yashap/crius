@@ -21,12 +21,11 @@ type Crius interface {
 
 	// ServiceRepository returns the app's service.Repository
 	ServiceRepository() *service.Repository
-	// ServiceFactory returns the app's service.Factory
-	ServiceFactory() *service.Factory
 	// Router returns the app's Router
 	Router() *gin.Engine
 }
 
+// DBConfig is the configuration for the database
 type DBConfig struct {
 	User     string
 	Password string
@@ -39,7 +38,6 @@ type crius struct {
 	db                *gorm.DB
 	logger            *zap.SugaredLogger
 	serviceRepository *service.Repository
-	serviceFactory    *service.Factory
 	router            *gin.Engine
 }
 
@@ -59,14 +57,12 @@ func NewCrius(dbConfig DBConfig) Crius {
 		log.Fatal(err)
 	}
 	serviceRepository := service.NewRepository(database, logger)
-	serviceFactory := service.NewFactory(database, logger)
-	router := controller.SetupRouter(&serviceRepository, &serviceFactory, logger)
+	router := controller.SetupRouter(database, &serviceRepository, logger)
 
 	return &crius{
 		db:                database,
 		logger:            logger,
 		serviceRepository: &serviceRepository,
-		serviceFactory:    &serviceFactory,
 		router:            router,
 	}
 }
@@ -86,10 +82,6 @@ func (c *crius) ListenAndServe() Crius {
 
 func (c *crius) ServiceRepository() *service.Repository {
 	return c.serviceRepository
-}
-
-func (c *crius) ServiceFactory() *service.Factory {
-	return c.serviceFactory
 }
 
 func (c *crius) Router() *gin.Engine {

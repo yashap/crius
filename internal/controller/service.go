@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/yashap/crius/internal/errors"
+	"gorm.io/gorm"
 
 	"go.uber.org/zap"
 
@@ -15,20 +16,20 @@ import (
 
 // Service is a controller for /service endpoints
 type Service struct {
+	database          *gorm.DB
 	serviceRepository *service.Repository
-	serviceFactory    *service.Factory
 	logger            *zap.SugaredLogger
 }
 
 // NewService instantiates a Service controller
 func NewService(
+	database *gorm.DB,
 	serviceRepository *service.Repository,
-	serviceFactory *service.Factory,
 	logger *zap.SugaredLogger,
 ) Service {
 	return Service{
+		database:          database,
 		serviceRepository: serviceRepository,
-		serviceFactory:    serviceFactory,
 		logger:            logger,
 	}
 }
@@ -36,18 +37,18 @@ func NewService(
 // Create creates a new service.Service
 // POST /services { ... service DTO ... }
 func (sc *Service) Create(c *gin.Context) {
-	svcDTO, err := dto.MakeServiceFromRequest(c)
+	serviceDTO, err := dto.MakeServiceFromRequest(c)
 	if err != nil {
 		errors.SetResponse(err, c)
 		return
 	}
-	s := sc.serviceFactory.NewService(svcDTO)
-	err = s.Save()
+	service := serviceDTO.ToEntity(sc.database, sc.logger)
+	err = service.Save()
 	if err != nil {
 		errors.SetResponse(err, c)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": s.ID})
+	c.JSON(http.StatusOK, gin.H{"id": service.ID})
 }
 
 // GetByCode gets a service.Service by the service's code

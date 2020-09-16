@@ -8,9 +8,16 @@ import (
 	"gorm.io/gorm"
 )
 
+// ServiceCode is a code that uniquely identifies a Service
 type ServiceCode = string
+
+// ServiceName is the human-readable/friedly name of a Service
 type ServiceName = string
+
+// EndpointCode is a code that uniquely identifies an Endpoint. It need not be globally unique, only unique within that one Service
 type EndpointCode = string
+
+// EndpointName is the human-readable/friedly name of an Endpoint
 type EndpointName = string
 
 // Service represents a service
@@ -34,6 +41,7 @@ type Endpoint struct {
 	Dependencies *map[ServiceCode][]EndpointCode `json:"dependencies"`
 }
 
+// ToEntity converts a Service DTO into a Service Entity
 func (s *Service) ToEntity(db *gorm.DB, logger *zap.SugaredLogger) service.Service {
 	var endpoints []service.Endpoint
 	if s.Endpoints == nil {
@@ -44,6 +52,7 @@ func (s *Service) ToEntity(db *gorm.DB, logger *zap.SugaredLogger) service.Servi
 	return service.MakeService(db, logger, nil, *s.Code, *s.Name, endpoints)
 }
 
+// MakeServiceFromRequest constructs a Service DTO from an HTTP request
 func MakeServiceFromRequest(c *gin.Context) (Service, error) {
 	var s Service
 	err := c.ShouldBindJSON(&s)
@@ -54,6 +63,7 @@ func MakeServiceFromRequest(c *gin.Context) (Service, error) {
 	return s, err
 }
 
+// MakeServiceFromEntity constructs a Service DTO from a Service Entity
 func MakeServiceFromEntity(s service.Service) Service {
 	endpointDTOs := makeEndpointsFromEntities(s.Endpoints)
 	return Service{
@@ -63,29 +73,22 @@ func MakeServiceFromEntity(s service.Service) Service {
 	}
 }
 
-// TODO: finish this, then get rid of service factory
 func endpointsToEntities(endpoints []Endpoint) []service.Endpoint {
-	var dependencies map[ServiceCode][]EndpointCode
-	if d.Dependencies != nil {
-		dtoDependencies := *d.Dependencies
-		dependencies = make(map[ServiceCode][]EndpointCode, len(dtoDependencies))
-		for serviceCode, dtoEndpointCodes := range dtoDependencies {
-			endpointCodes := make([]EndpointCode, len(dtoEndpointCodes))
-			for idx, dtoEndpointCode := range dtoEndpointCodes {
-				endpointCodes[idx] = dtoEndpointCode
-			}
-			if len(endpointCodes) > 0 {
-				dependencies[serviceCode] = endpointCodes
-			}
+	endpointEntities := make([]service.Endpoint, len(endpoints))
+	for idx, endpoint := range endpoints {
+		var dependencies map[ServiceCode][]EndpointCode
+		if endpoint.Dependencies == nil {
+			dependencies = make(map[ServiceCode][]EndpointCode)
+		} else {
+			dependencies = *endpoint.Dependencies
+		}
+		endpointEntities[idx] = service.Endpoint{
+			Code:         *endpoint.Code,
+			Name:         *endpoint.Name,
+			Dependencies: dependencies,
 		}
 	}
-
-	e := Endpoint{
-		Code:         *d.Code,
-		Name:         *d.Name,
-		Dependencies: dependencies,
-	}
-	return e
+	return endpointEntities
 }
 
 func makeEndpointsFromEntities(endpoints []service.Endpoint) []Endpoint {
