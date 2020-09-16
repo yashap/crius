@@ -71,7 +71,7 @@ run-service:
 	APP_DB_USERNAME=$(POSTGRES_USER) APP_DB_PASSWORD=$(POSTGRES_PASSWORD) APP_DB_NAME=$(POSTGRES_DB) PORT=$(CRIUS_PORT) go run $(ROOT_DIR)/internal/cmd/main/main.go
 
 .PHONY: test
-## Run the tests
+## Run all unit and integration tests
 test:
 	go test -v ./...
 

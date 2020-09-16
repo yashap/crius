@@ -7,14 +7,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yashap/crius/internal/domain/service"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
+// SetupRouter sets up the Gin router
 func SetupRouter(
+	database *gorm.DB,
 	serviceRepository *service.Repository,
-	serviceFactory *service.Factory,
 	logger *zap.SugaredLogger,
 ) *gin.Engine {
-	serviceController := NewService(serviceRepository, serviceFactory, logger)
+	serviceController := NewService(database, serviceRepository, logger)
 
 	// Run the server
 	r := gin.New()
