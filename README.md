@@ -1,5 +1,5 @@
 # Crius
-TODO description
+Crius is a work-in-progress, open source project, that helps you manage dependencies between frontends, services and events, in a service oriented architecture. It will help you visualize your system, and find both direct and transitive dependencies of any service, or any service endpoint.
 
 ## Contributing
 
@@ -7,7 +7,6 @@ TODO description
 
 * [go v1.14](https://golang.org/dl/)
 * [Docker desktop](https://docs.docker.com/desktop/)
-* [migrate v4](https://github.com/golang-migrate/migrate/tree/master/cmd/migrate)
 
 ### Dev Workflow
 
@@ -15,9 +14,12 @@ TODO description
 # View available make targets
 make help
 
-# Spin up a DB, run the app against it
-make db/run migrate/up service/run
+# Run the DB and HTTP server (will wipe local DB)
+make run
 
-# Tidy up code and run the unit tests
-make tidy service/test
+# Just run the HTTP server (assumes DB is already running)
+make run-server
+
+# Tidy up code and run all unit and integration tests
+make tidy test
 ```
