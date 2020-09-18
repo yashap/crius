@@ -1,20 +1,23 @@
 .DEFAULT_GOAL:=help
 
-ROOT_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 GREEN  := $(shell tput -Txterm setaf 2)
 YELLOW := $(shell tput -Txterm setaf 3)
 WHITE  := $(shell tput -Txterm setaf 7)
 RESET  := $(shell tput -Txterm sgr0)
 TARGET_MAX_CHAR_NUM := 15
 
+ROOT_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+POSTGRES_MIGRATIONS_DIR := $(ROOT_DIR)/script/postgresql/migrations
+
 POSTGRES_USER := app
 POSTGRES_PASSWORD := app121
 POSTGRES_HOST := localhost
 POSTGRES_PORT := 5432
 POSTGRES_DB := crius
-POSTGRESQL_URL := "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
+CRIUS_DB_URL := "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
 
 CRIUS_PORT := 3000
+
 
 .PHONY: help
 ## Show this help
@@ -40,7 +43,7 @@ debug:
 	@echo POSTGRES_HOST=$(POSTGRES_HOST)
 	@echo POSTGRES_PORT=$(POSTGRES_PORT)
 	@echo POSTGRES_DB=$(POSTGRES_DB)
-	@echo POSTGRESQL_URL=$(POSTGRESQL_URL)
+	@echo CRIUS_DB_URL=$(CRIUS_DB_URL)
 	@echo CRIUS_PORT=$(CRIUS_PORT)
 
 .PHONY: tidy
@@ -55,32 +58,47 @@ build-service:
 	go build ./...
 
 .PHONY: run
-## Run the DB and HTTP server (will wipe local DB)
-run: run-db run-service
-
-.PHONY: run-db
-## Start the database
-run-db:
-	@docker rm -f criusdb > /dev/null 2>&1 || true
-	docker run --name criusdb -e POSTGRES_USER=$(POSTGRES_USER) -e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) -e POSTGRES_DB=$(POSTGRES_DB) -p $(POSTGRES_PORT):5432 -d postgres:13
-	@$(MAKE) await-db
+## Run the DB (Postgres) and HTTP server (will wipe local DB)
+run: pg-run-db run-service
 
 .PHONY: run-service
 ## Run the Crius HTTP server
 run-service:
-	APP_DB_USERNAME=$(POSTGRES_USER) APP_DB_PASSWORD=$(POSTGRES_PASSWORD) APP_DB_NAME=$(POSTGRES_DB) PORT=$(CRIUS_PORT) go run $(ROOT_DIR)/internal/cmd/main/main.go
+	CRIUS_DB_URL=$(CRIUS_DB_URL) POSTGRES_MIGRATIONS_DIR=$(POSTGRES_MIGRATIONS_DIR) PORT=$(CRIUS_PORT) go run $(ROOT_DIR)/internal/cmd/main/main.go
 
 .PHONY: test
 ## Run all unit and integration tests
 test:
 	go test -v ./...
 
-.PHONY: await-db
-# Internal target, waits for the DB to come up
-await-db:
+.PHONY: pg-run-db
+## Start the Postgres DB
+pg-run-db:
+	@docker rm -f criusdb > /dev/null 2>&1 || true
+	docker run --name criusdb -e POSTGRES_USER=$(POSTGRES_USER) -e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) -e POSTGRES_DB=$(POSTGRES_DB) -p $(POSTGRES_PORT):5432 -d postgres:13
+	@$(MAKE) pg-await-db
+
+.PHONY: pg-await-db
+# Internal target, waits for the Postgres DB to come up
+pg-await-db:
 	@db_up=0; \
 	while [ $${db_up} -eq 0 ]; do \
 		echo 'Waiting for DB to come up ...'; \
-		db_up=`docker exec -t criusdb /bin/bash -c 'psql $(POSTGRESQL_URL) -c "SELECT 1"' > /dev/null 2>&1 && echo 1 || echo 0`; \
+		db_up=`docker exec -t criusdb /bin/bash -c 'psql $(CRIUS_DB_URL) -c "SELECT 1"' > /dev/null 2>&1 && echo 1 || echo 0`; \
 		if [ $$db_up -eq 1 ]; then echo 'DB is up'; else sleep 1; fi \
 	done
+
+.PHONY: pg-migrate-up
+## Run all Postgres DB migrations (rarely used, the app does this on startup)
+pg-migrate-up:
+	migrate -database $(CRIUS_DB_URL) -path $(POSTGRES_MIGRATIONS_DIR) up
+
+.PHONY: pg-migrate-down
+## Reverse all Postgres DB migrations
+pg-migrate-down:
+	migrate -database $(CRIUS_DB_URL) -path $(POSTGRES_MIGRATIONS_DIR) down
+
+.PHONY: pg-migrate-new
+## Create a new Postgres DB migration script. Must set MIGRATE_FILENAME, e.g. `MIGRATE_FILENAME=create_products_table make migrate-new`
+pg-migrate-new:
+	migrate create -ext sql -dir $(POSTGRES_MIGRATIONS_DIR) -seq $(MIGRATE_FILENAME)

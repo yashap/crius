@@ -6,17 +6,15 @@ import (
 	"log"
 	"strconv"
 
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // Postgres driver
 	"github.com/ory/dockertest/v3"
+	"github.com/xo/dburl"
 )
 
 type TestDB struct {
 	pool      *dockertest.Pool
 	container *dockertest.Resource
-	User      string
-	Password  string
-	Database  string
-	Port      int
+	URL       *dburl.URL
 }
 
 func NewTestDB() *TestDB {
@@ -35,22 +33,24 @@ func NewTestDB() *TestDB {
 		log.Fatalf("Could not start resource: %s", err)
 	}
 	port, _ := strconv.Atoi(resource.GetPort("5432/tcp"))
+	rawDBURL := fmt.Sprintf("postgres://%s:%s@localhost:%v/%s?sslmode=disable", user, password, port, dbName)
+	dbURL, err := dburl.Parse(rawDBURL)
+	if err != nil {
+		log.Fatalf("Could not parse DB URL: %s %s", rawDBURL, err)
+	}
 
 	testDB := &TestDB{
 		pool:      pool,
 		container: resource,
-		User:      user,
-		Password:  password,
-		Database:  dbName,
-		Port:      port,
+		URL:       dbURL,
 	}
 
 	// Ensure container is up and ready to accept connections
 	if err = pool.Retry(func() error {
 		var err error
 		dbase, err := sql.Open(
-			"postgres",
-			fmt.Sprintf("postgres://%s:%s@localhost:%v/%s?sslmode=disable", user, password, port, dbName),
+			dbURL.Driver,
+			dbURL.DSN,
 		)
 		if err != nil {
 			return err

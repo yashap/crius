@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/yashap/crius/internal/dao"
 	"github.com/yashap/crius/internal/errors"
-	"gorm.io/gorm"
 
 	"go.uber.org/zap"
 
@@ -16,19 +16,21 @@ import (
 
 // Service is a controller for /service endpoints
 type Service struct {
-	database          *gorm.DB
-	serviceRepository *service.Repository
-	logger            *zap.SugaredLogger
+	serviceQueries         dao.ServiceQueries
+	serviceEndpointQueries dao.ServiceEndpointQueries
+	serviceRepository      *service.Repository
+	logger                 *zap.SugaredLogger
 }
 
 // NewService instantiates a Service controller
 func NewService(
-	database *gorm.DB,
+	serviceQueries dao.ServiceQueries,
+	serviceEndpointQueries dao.ServiceEndpointQueries,
 	serviceRepository *service.Repository,
 	logger *zap.SugaredLogger,
 ) Service {
 	return Service{
-		database:          database,
+		serviceQueries:    serviceQueries,
 		serviceRepository: serviceRepository,
 		logger:            logger,
 	}
@@ -42,7 +44,7 @@ func (sc *Service) Create(c *gin.Context) {
 		errors.SetResponse(err, c)
 		return
 	}
-	service := serviceDTO.ToEntity(sc.database, sc.logger)
+	service := serviceDTO.ToEntity(sc.serviceQueries, sc.serviceEndpointQueries, sc.logger)
 	err = service.Save()
 	if err != nil {
 		errors.SetResponse(err, c)

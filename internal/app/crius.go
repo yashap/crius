@@ -4,18 +4,21 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
+	"github.com/xo/dburl"
 
+	_ "github.com/lib/pq" // Postgres driver
 	"github.com/yashap/crius/internal/controller"
+	"github.com/yashap/crius/internal/dao"
 	"github.com/yashap/crius/internal/db"
 	"github.com/yashap/crius/internal/domain/service"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 // Crius is the Crius application
 type Crius interface {
 	// MigrateDB runs the DB migrations
-	MigrateDB() Crius
+	MigrateDB(migrationDir string) Crius
 	// ListenAndServe starts the HTTP server
 	ListenAndServe() Crius
 
@@ -25,57 +28,52 @@ type Crius interface {
 	Router() *gin.Engine
 }
 
-// DBConfig is the configuration for the database
-type DBConfig struct {
-	User     string
-	Password string
-	DBName   string
-	Port     int
-	SSL      bool
-}
-
 type crius struct {
-	db                *gorm.DB
+	db                *sqlx.DB
+	dbURL             *dburl.URL
 	logger            *zap.SugaredLogger
 	serviceRepository *service.Repository
 	router            *gin.Engine
 }
 
 // NewCrius creates a new Crius application
-func NewCrius(dbConfig DBConfig) Crius {
+func NewCrius(dbURL *dburl.URL) Crius {
 	logger := zap.NewExample().Sugar()
 	defer logger.Sync()
 
-	database, err := db.Connect(
-		dbConfig.User,
-		dbConfig.Password,
-		dbConfig.DBName,
-		dbConfig.Port,
-		dbConfig.SSL,
-	)
+	database, err := sqlx.Connect(dbURL.Driver, dbURL.DSN)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to connect to database. URL: %s ; Error: %s", dbURL, err.Error())
 	}
-	serviceRepository := service.NewRepository(database, logger)
-	router := controller.SetupRouter(database, &serviceRepository, logger)
+	serviceQueries, err := dao.NewServiceQueries(dbURL, database)
+	if err != nil {
+		log.Fatalf("Failed to create ServiceQueries. DB URL: %s, Error: %s", dbURL, err.Error())
+	}
+	serviceEndpointQueries, err := dao.NewServiceEndpointQueries(dbURL, database)
+	if err != nil {
+		log.Fatalf("Failed to create ServiceEndpointQueries. DB URL: %s, Error: %s", dbURL, err.Error())
+	}
+	serviceRepository := service.NewRepository(serviceQueries, serviceEndpointQueries, logger)
+	router := controller.SetupRouter(serviceQueries, serviceEndpointQueries, &serviceRepository, logger)
 
 	return &crius{
 		db:                database,
+		dbURL:             dbURL,
 		logger:            logger,
 		serviceRepository: &serviceRepository,
 		router:            router,
 	}
 }
 
-func (c *crius) MigrateDB() Crius {
-	db.AutoMigrate(c.db)
+func (c *crius) MigrateDB(migrationDir string) Crius {
+	db.Migrate(c.db, c.dbURL, migrationDir)
 	return c
 }
 
 func (c *crius) ListenAndServe() Crius {
 	err := c.router.Run()
 	if err != nil {
-		log.Fatal("Failed to run server" + err.Error())
+		log.Fatal("Failed to run server: " + err.Error())
 	}
 	return c
 }

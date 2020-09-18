@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/yashap/crius/internal/app"
@@ -27,13 +28,12 @@ func TestMain(m *testing.M) {
 func Test(t *testing.T) {
 	g := goblin.Goblin(t)
 	RegisterFailHandler(func(m string, _ ...int) { g.Fail(m) })
-	crius := app.NewCrius(app.DBConfig{
-		User:     testDB.User,
-		Password: testDB.Password,
-		DBName:   testDB.Database,
-		Port:     testDB.Port,
-	})
-	crius.MigrateDB()
+	relativeMigrationsDir := "../../script/postgresql/migrations"
+	migrationsDir, err := filepath.Abs(relativeMigrationsDir)
+	if err != nil {
+		t.Errorf("Could not convert to absolute path: %s ; Error: %s", relativeMigrationsDir, err.Error())
+	}
+	crius := app.NewCrius(testDB.URL).MigrateDB(migrationsDir)
 
 	g.Describe("POST /services", func() {
 		g.It("Should create a new service", func() {

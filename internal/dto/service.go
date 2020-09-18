@@ -2,10 +2,10 @@ package dto
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/yashap/crius/internal/dao"
 	"github.com/yashap/crius/internal/domain/service"
 	"github.com/yashap/crius/internal/errors"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 // ServiceCode is a code that uniquely identifies a Service
@@ -42,14 +42,18 @@ type Endpoint struct {
 }
 
 // ToEntity converts a Service DTO into a Service Entity
-func (s *Service) ToEntity(db *gorm.DB, logger *zap.SugaredLogger) service.Service {
+func (s *Service) ToEntity(
+	serviceQueries dao.ServiceQueries,
+	serviceEndpointQueries dao.ServiceEndpointQueries,
+	logger *zap.SugaredLogger,
+) service.Service {
 	var endpoints []service.Endpoint
 	if s.Endpoints == nil {
 		endpoints = make([]service.Endpoint, 0)
 	} else {
 		endpoints = endpointsToEntities(*s.Endpoints)
 	}
-	return service.MakeService(db, logger, nil, *s.Code, *s.Name, endpoints)
+	return service.MakeService(serviceQueries, serviceEndpointQueries, logger, nil, *s.Code, *s.Name, endpoints)
 }
 
 // MakeServiceFromRequest constructs a Service DTO from an HTTP request
