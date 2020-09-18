@@ -1,28 +1,36 @@
 package service
 
 import (
+	"fmt"
+
 	"github.com/yashap/crius/internal/dao"
-	"gorm.io/gorm/clause"
 
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
-type ServiceCode = string
-type ServiceName = string
+// Code is a code that uniquely identifies a Service
+type Code = string
+
+// Name is the human-readable/friedly name of a Service
+type Name = string
+
+// EndpointCode is a code that uniquely identifies an Endpoint. It need not be globally unique, only unique within that one Service
 type EndpointCode = string
+
+// EndpointName is the human-readable/friedly name of an Endpoint
 type EndpointName = string
 
 // Service represents a service
 type Service struct {
-	db     *gorm.DB
-	logger *zap.SugaredLogger
+	serviceQueries         dao.ServiceQueries
+	serviceEndpointQueries dao.ServiceEndpointQueries
+	logger                 *zap.SugaredLogger
 	// ID uniquely identifies this service
 	ID *int64
 	// Code is a unique code for the service. For example, "location_tracking" for a location tracking service
-	Code ServiceCode
+	Code Code
 	// Name is a friendly name for the service. For example, "Location Tracking" for a location tracking service
-	Name ServiceName
+	Name Name
 	// Endpoints is a list of Endpoints that the Service has
 	Endpoints []Endpoint
 }
@@ -35,92 +43,104 @@ type Endpoint struct {
 	// Name is a friendly name for the Endpoint. For example, "Create location" or "Get location by id"
 	Name EndpointName
 	// Dependencies is a map of Dependencies for a given Endpoint. Keys are service codes, values are lists of endpoint codes
-	Dependencies map[ServiceCode][]EndpointCode
+	Dependencies map[Code][]EndpointCode
 }
 
+// MakeService constructs a Service
 func MakeService(
-	db *gorm.DB,
+	serviceQueries dao.ServiceQueries,
+	serviceEndpointQueries dao.ServiceEndpointQueries,
 	logger *zap.SugaredLogger,
 	id *int64,
-	code ServiceCode,
-	name ServiceName,
+	code Code,
+	name Name,
 	endpoints []Endpoint,
 ) Service {
 	return Service{
-		db:        db,
-		logger:    logger,
-		ID:        id,
-		Code:      code,
-		Name:      name,
-		Endpoints: endpoints,
+		serviceQueries:         serviceQueries,
+		serviceEndpointQueries: serviceEndpointQueries,
+		logger:                 logger,
+		ID:                     id,
+		Code:                   code,
+		Name:                   name,
+		Endpoints:              endpoints,
 	}
 }
 
 // Save saves a Service
 func (s *Service) Save() error {
-	// TODO: log error, convert error, context
-	serviceDAO, err := s.toDAO()
+	serviceDAO := s.toDAO()
+	serviceID, err := s.serviceQueries.Upsert(serviceDAO)
 	if err != nil {
 		return err
 	}
-	err = s.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "code"}},
-		DoUpdates: clause.AssignmentColumns([]string{"code", "name"}),
-	}).Create(serviceDAO).Error
-	if err != nil {
-		return err
+	fmt.Printf(">>>>>> 1 %v\n\n", s)
+	for _, endpoint := range s.Endpoints {
+		fmt.Printf(">>>>>> 2\n\n")
+		endpointDAO := endpoint.toDAO(serviceID)
+		fmt.Printf(">>>>>> 3\n\n")
+		// TODO: for some reason, within the service, serviceEndpointQueries is nil ====> figure out why
+		_, err := s.serviceEndpointQueries.Upsert(endpointDAO)
+		if err != nil {
+			return err
+		}
+		// TODO save endpoint deps
 	}
-	s.ID = &serviceDAO.ID
+
+	fmt.Printf(">>>>>> done %v\n\n", serviceID)
+	s.ID = &serviceID
 	return nil
 }
 
-func (s *Service) toDAO() (*dao.Service, error) {
-	endpoints, err := newEndpointDAOs(s.db, s.Endpoints)
-	if err != nil {
-		return nil, err
+func (s *Service) toDAO() dao.Service {
+	return dao.Service{
+		Code: s.Code,
+		Name: s.Name,
 	}
-	service := dao.Service{
-		Code:             s.Code,
-		Name:             s.Name,
-		ServiceEndpoints: endpoints,
-	}
-	return &service, nil
 }
 
-func newEndpointDAOs(db *gorm.DB, endpoints []Endpoint) ([]dao.ServiceEndpoint, error) {
-	endpointDAOs := make([]dao.ServiceEndpoint, len(endpoints))
-	for idx, e := range endpoints {
-		deps, err := newDependencyDAOs(db, e.Dependencies)
-		if err != nil {
-			return endpointDAOs, err
-		}
-		endpointDAOs[idx] = dao.ServiceEndpoint{
-			Code:                        e.Code,
-			Name:                        e.Name,
-			ServiceEndpointDependencies: deps,
-		}
+func (e *Endpoint) toDAO(serviceID int64) dao.ServiceEndpoint {
+	return dao.ServiceEndpoint{
+		ServiceID: serviceID,
+		Code:      e.Code,
+		Name:      e.Name,
 	}
-	return endpointDAOs, nil
 }
 
-func newDependencyDAOs(
-	db *gorm.DB,
-	dependencies map[ServiceCode][]EndpointCode,
-) ([]dao.ServiceEndpointDependency, error) {
-	dependencyDAOs := make([]dao.ServiceEndpointDependency, len(dependencies)) // TODO: smarter?
-	for depServiceCode, depEndpointCodes := range dependencies {
-		for _, depEndpointCode := range depEndpointCodes {
-			// TODO: join
-			depService := dao.Service{}
-			depEndpoint := dao.ServiceEndpoint{}
-			if err := db.Where(dao.Service{Code: depServiceCode}).First(&depService).Error; err != nil {
-				return dependencyDAOs, err
-			}
-			if err := db.Where(dao.ServiceEndpoint{ServiceID: depService.ID, Code: depEndpointCode}).First(&depEndpoint).Error; err != nil {
-				return dependencyDAOs, err
-			}
-			dependencyDAOs = append(dependencyDAOs, dao.ServiceEndpointDependency{DependencyServiceEndpointID: depEndpoint.ID})
-		}
-	}
-	return dependencyDAOs, nil
-}
+// func newEndpointDAOs(db *sqlx.DB, endpoints []Endpoint) ([]dao.ServiceEndpoint, error) {
+// 	endpointDAOs := make([]dao.ServiceEndpoint, len(endpoints))
+// 	for idx, e := range endpoints {
+// 		deps, err := newDependencyDAOs(db, e.Dependencies)
+// 		if err != nil {
+// 			return endpointDAOs, err
+// 		}
+// 		endpointDAOs[idx] = dao.ServiceEndpoint{
+// 			Code:                        e.Code,
+// 			Name:                        e.Name,
+// 			ServiceEndpointDependencies: deps,
+// 		}
+// 	}
+// 	return endpointDAOs, nil
+// }
+
+// func newDependencyDAOs(
+// 	db *sqlx.DB,
+// 	dependencies map[Code][]EndpointCode,
+// ) ([]dao.ServiceEndpointDependency, error) {
+// 	dependencyDAOs := make([]dao.ServiceEndpointDependency, len(dependencies)) // TODO: smarter?
+// 	for depServiceCode, depEndpointCodes := range dependencies {
+// 		for _, depEndpointCode := range depEndpointCodes {
+// 			// TODO: join
+// 			depService := dao.Service{}
+// 			depEndpoint := dao.ServiceEndpoint{}
+// 			if err := db.Where(dao.Service{Code: depServiceCode}).First(&depService).Error; err != nil {
+// 				return dependencyDAOs, err
+// 			}
+// 			if err := db.Where(dao.ServiceEndpoint{ServiceID: depService.ID, Code: depEndpointCode}).First(&depEndpoint).Error; err != nil {
+// 				return dependencyDAOs, err
+// 			}
+// 			dependencyDAOs = append(dependencyDAOs, dao.ServiceEndpointDependency{DependencyServiceEndpointID: depEndpoint.ID})
+// 		}
+// 	}
+// 	return dependencyDAOs, nil
+// }

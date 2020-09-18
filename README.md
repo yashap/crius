@@ -18,7 +18,7 @@ make help
 make run
 
 # Just run the HTTP server (assumes DB is already running)
-make run-server
+make run-service
 
 # Tidy up code and run all unit and integration tests
 make tidy test

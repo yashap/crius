@@ -64,6 +64,24 @@ func ServiceNotFound(message string, cause *error) error {
 	}
 }
 
+func InternalModelConversionError(message string, cause *error) error {
+	return &Error{
+		Message:    message,
+		StatusCode: http.StatusInternalServerError,
+		SubCode:    uuid.MustParse("49cd5f92-c7fa-4400-bafe-32f4215d73b2"),
+		cause:      cause,
+	}
+}
+
+func DatabaseError(message string, cause *error) error {
+	return &Error{
+		Message:    message,
+		StatusCode: http.StatusInternalServerError,
+		SubCode:    uuid.MustParse("f4bb1d18-f4ca-4401-9a2a-8e201e707d5a"),
+		cause:      cause,
+	}
+}
+
 func UnclassifiedError(message string, cause *error) error {
 	return &Error{
 		Message:    message,
