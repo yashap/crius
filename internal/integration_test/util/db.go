@@ -58,7 +58,7 @@ func NewTestDB() *TestDB {
 		return dbase.Ping()
 	}); err != nil {
 		testDB.Shutdown(false)
-		log.Fatalf("Could not connect to Postgres Docker container: %s", err)
+		log.Fatalf("Could not connect to Postgres Docker container: %s", err.Error())
 	}
 
 	return testDB
@@ -67,8 +67,8 @@ func NewTestDB() *TestDB {
 func (tdb *TestDB) Shutdown(fatal bool) {
 	if err := tdb.pool.Purge(tdb.container); err != nil {
 		if fatal {
-			log.Fatalf("Could not purge Postgres Docker Container: %s\n", err)
+			log.Fatalf("Could not purge Postgres Docker Container: %s\n", err.Error())
 		}
-		fmt.Printf("Could not purge Postgres Docker Container: %s\n", err)
+		fmt.Printf("Could not purge Postgres Docker Container: %s\n", err.Error())
 	}
 }

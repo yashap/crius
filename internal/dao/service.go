@@ -1,9 +1,11 @@
 package dao
 
 import (
+	"database/sql"
 	"github.com/jmoiron/sqlx"
 	"github.com/xo/dburl"
 	"github.com/yashap/crius/internal/errors"
+	"go.uber.org/zap"
 )
 
 // Service represents a Service database record
@@ -19,19 +21,28 @@ type ServiceQueries interface {
 	Upsert(s Service) (int64, error)
 	// GetByCode gets a Service by its code
 	GetByCode(code string) (*Service, error)
+	// FindByIDs finds Services by ids
+	FindByIDs(ids []int64) ([]Service, error)
 }
 
 // NewServiceQueries creates a new ServiceQueries instance
-func NewServiceQueries(dbURL *dburl.URL, db *sqlx.DB) (ServiceQueries, error) {
+func NewServiceQueries(
+	dbURL *dburl.URL,
+	db *sqlx.DB,
+	logger *zap.SugaredLogger,
+) (ServiceQueries, error) {
 	if dbURL.Driver == "postgres" {
-		return &postgresServiceQueries{db}, nil
+		return &postgresServiceQueries{logger, db}, nil
 	}
 	// TODO: mysql support
-	return nil, errors.DatabaseError("Unsupported DB driver: "+dbURL.Driver, nil)
+	msg := "Unsupported DB driver"
+	logger.Errorw(msg, "driver", dbURL.Driver)
+	return nil, errors.DatabaseError(msg, nil)
 }
 
 type postgresServiceQueries struct {
-	db *sqlx.DB
+	logger *zap.SugaredLogger
+	db     *sqlx.DB
 }
 
 func (q *postgresServiceQueries) Upsert(s Service) (int64, error) {
@@ -43,17 +54,23 @@ func (q *postgresServiceQueries) Upsert(s Service) (int64, error) {
 		s,
 	)
 	if err != nil {
-		return 0, err // TODO wrap
+		msg := "Failed to execute query when upserting Service"
+		q.logger.Errorw(msg, "err", err.Error(), "service", s)
+		return 0, errors.DatabaseError(msg, &err)
 	}
 	defer rows.Close()
 	var id int64
 	for rows.Next() {
 		if err := rows.Scan(&id); err != nil {
-			return 0, err // TODO wrap
+			msg := "Failed to scan for rows when upserting Service"
+			q.logger.Errorw(msg, "err", err.Error(), "service", s)
+			return 0, errors.DatabaseError(msg, &err)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return 0, err // TODO wrap
+		msg := "Failure upserting Service"
+		q.logger.Errorw(msg, "err", err.Error(), "service", s)
+		return 0, errors.DatabaseError(msg, &err)
 	}
 	return id, nil
 }
@@ -61,9 +78,33 @@ func (q *postgresServiceQueries) Upsert(s Service) (int64, error) {
 func (q *postgresServiceQueries) GetByCode(code string) (*Service, error) {
 	var service Service
 	err := q.db.Get(&service, "SELECT * FROM service WHERE code = $1", code)
-	// TODO not found?
-	if err != nil {
-		return nil, err // TODO wrap
+	if err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
+		msg := "Failed to get Service from DB by code"
+		q.logger.Errorw(msg, "err", err.Error(), "code", code)
+		return nil, errors.DatabaseError(msg, &err)
 	}
 	return &service, nil
+}
+
+func (q *postgresServiceQueries) FindByIDs(ids []int64) ([]Service, error) {
+	services := make([]Service, 0)
+	if len(ids) == 0 {
+		return services, nil
+	}
+	query, args, err := sqlx.In("SELECT * FROM service WHERE id IN (?)", ids)
+	if err != nil {
+		msg := "Failed to get generate IN clause for ServiceQueries.FindByIDs"
+		q.logger.Errorw(msg, "err", err.Error(), "ids", ids)
+		return nil, errors.DatabaseError(msg, &err)
+	}
+	query = q.db.Rebind(query)
+	err = q.db.Select(&services, query, args...)
+	if err != nil {
+		msg := "Failed to find Services from DB by ids"
+		q.logger.Errorw(msg, "ids", ids)
+		return nil, errors.DatabaseError(msg, &err)
+	}
+	return services, nil
 }

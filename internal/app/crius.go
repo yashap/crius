@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -45,16 +46,31 @@ func NewCrius(dbURL *dburl.URL) Crius {
 	if err != nil {
 		log.Fatalf("Failed to connect to database. URL: %s ; Error: %s", dbURL, err.Error())
 	}
-	serviceQueries, err := dao.NewServiceQueries(dbURL, database)
+	serviceQueries, err := dao.NewServiceQueries(dbURL, database, logger)
 	if err != nil {
-		log.Fatalf("Failed to create ServiceQueries. DB URL: %s, Error: %s", dbURL, err.Error())
+		fmt.Printf("Failed to create ServiceQueries. DB URL: %s, Error: %s", dbURL, err.Error()) // TODO log.Fatalf
 	}
-	serviceEndpointQueries, err := dao.NewServiceEndpointQueries(dbURL, database)
+	serviceEndpointQueries, err := dao.NewServiceEndpointQueries(dbURL, database, logger)
 	if err != nil {
-		log.Fatalf("Failed to create ServiceEndpointQueries. DB URL: %s, Error: %s", dbURL, err.Error())
+		fmt.Printf("Failed to create ServiceEndpointQueries. DB URL: %s, Error: %s", dbURL, err.Error()) // TODO log.Fatalf
 	}
-	serviceRepository := service.NewRepository(serviceQueries, serviceEndpointQueries, logger)
-	router := controller.SetupRouter(serviceQueries, serviceEndpointQueries, &serviceRepository, logger)
+	serviceEndpointDependencyQueries, err := dao.NewServiceEndpointDependencyQueries(dbURL, database, logger)
+	if err != nil {
+		fmt.Printf("Failed to create ServiceEndpointDependencyQueries. DB URL: %s, Error: %s", dbURL, err.Error()) // TODO log.Fatalf
+	}
+	// TODO: clean up the below
+	var serviceRepository service.Repository
+	if dbURL.Driver == "postgresql" {
+		serviceRepository = service.NewRepository(
+			serviceQueries, serviceEndpointQueries, serviceEndpointDependencyQueries, logger,
+		)
+	} else if dbURL.Driver == "mysql" {
+		serviceRepository = service.NewRepository2(database, logger)
+	} else {
+		log.Fatal("fooooo!!!!")
+	}
+
+	router := controller.SetupRouter(serviceRepository, logger)
 
 	return &crius{
 		db:                database,

@@ -14,12 +14,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to parse DB URL: %s", rawDBURL)
 	}
-	var migrationDir string
-	if dbURL.Driver == "postgres" {
-		migrationDir = os.Getenv("POSTGRES_MIGRATIONS_DIR")
-	} else {
-		// TODO mysql support
-		log.Fatalf("Unsupported Failed to parse DB URL: %s", rawDBURL)
-	}
+	migrationDir := os.Getenv("CRIUS_MIGRATIONS_DIR")
 	app.NewCrius(dbURL).MigrateDB(migrationDir).ListenAndServe()
 }

@@ -1,30 +1,22 @@
 package db
 
 import (
-	"fmt"
-	"log"
-
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file" // For loading migration files
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq" // Postgres driver
 	"github.com/xo/dburl"
+	"github.com/yashap/crius/internal/db/mysql"
+	"github.com/yashap/crius/internal/db/postgresql"
+	"log"
 )
 
 // Migrate performs all database migrations
 func Migrate(db *sqlx.DB, dbURL *dburl.URL, migrationDir string) {
-	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
-	if err != nil {
-		log.Fatal(err)
+	if dbURL.Driver == "postgres" {
+		postgresql.Migrate(db, dbURL, migrationDir)
+	} else if dbURL.Driver == "mysql" {
+		mysql.Migrate(db, dbURL, migrationDir)
+	} else {
+		log.Fatalf("Unsupported database: %s", dbURL.Driver)
 	}
-	m, err := migrate.NewWithDatabaseInstance(
-		fmt.Sprintf("file://%s", migrationDir),
-		dbURL.Driver,
-		driver,
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-	m.Steps(2)
 }

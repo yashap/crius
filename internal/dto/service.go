@@ -2,10 +2,8 @@ package dto
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/yashap/crius/internal/dao"
 	"github.com/yashap/crius/internal/domain/service"
 	"github.com/yashap/crius/internal/errors"
-	"go.uber.org/zap"
 )
 
 // ServiceCode is a code that uniquely identifies a Service
@@ -42,18 +40,19 @@ type Endpoint struct {
 }
 
 // ToEntity converts a Service DTO into a Service Entity
-func (s *Service) ToEntity(
-	serviceQueries dao.ServiceQueries,
-	serviceEndpointQueries dao.ServiceEndpointQueries,
-	logger *zap.SugaredLogger,
-) service.Service {
+func (s *Service) ToEntity() service.Service {
 	var endpoints []service.Endpoint
 	if s.Endpoints == nil {
 		endpoints = make([]service.Endpoint, 0)
 	} else {
 		endpoints = endpointsToEntities(*s.Endpoints)
 	}
-	return service.MakeService(serviceQueries, serviceEndpointQueries, logger, nil, *s.Code, *s.Name, endpoints)
+	return service.MakeService(
+		nil,
+		*s.Code,
+		*s.Name,
+		endpoints,
+	)
 }
 
 // MakeServiceFromRequest constructs a Service DTO from an HTTP request
@@ -97,12 +96,14 @@ func endpointsToEntities(endpoints []Endpoint) []service.Endpoint {
 
 func makeEndpointsFromEntities(endpoints []service.Endpoint) []Endpoint {
 	endpointDTOs := make([]Endpoint, len(endpoints))
-	for idx, e := range endpoints {
-		endpointDTOs[idx] = Endpoint{
-			Code:         &e.Code,
-			Name:         &e.Name,
-			Dependencies: &e.Dependencies,
+	for idx := range endpoints {
+		endpoint := endpoints[idx]
+		endpointDTO := Endpoint{
+			Code:         &endpoint.Code,
+			Name:         &endpoint.Name,
+			Dependencies: &endpoint.Dependencies,
 		}
+		endpointDTOs[idx] = endpointDTO
 	}
 	return endpointDTOs
 }
