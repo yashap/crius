@@ -7,6 +7,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
+	"github.com/xo/dburl"
 	"github.com/yashap/crius/internal/dao"
 	mysqldao "github.com/yashap/crius/internal/db/mysql/dao"
 	"github.com/yashap/crius/internal/errors"
@@ -24,14 +25,17 @@ type Repository interface {
 }
 
 type mysqlRepository struct {
+	dbURL  *dburl.URL
 	db     *sqlx.DB
 	logger *zap.SugaredLogger
 }
 
 func NewRepository2(
+	dbURL *dburl.URL,
 	db *sqlx.DB,
 	logger *zap.SugaredLogger,
 ) Repository {
+	// TODO: or return postgres repo
 	return &mysqlRepository{
 		db:     db,
 		logger: logger,
@@ -39,34 +43,71 @@ func NewRepository2(
 }
 
 func (r *mysqlRepository) Save(s *Service) error {
-	// TODO: pull out private upsertEndpoint method?
-	serviceDAO := &mysqldao.Service{}
-	serviceDAO.Code = s.Code
-	serviceDAO.Name = s.Name
-	err := serviceDAO.Upsert(
-		context.Background(),
-		r.db.DB,
-		boil.Whitelist("name"),
-		boil.Infer(),
-	)
+	// TODO: move transaction handling to top level, pass through in Context
+	tx, err := r.db.BeginTx(context.Background(), nil)
 	if err != nil {
-		msg := "Failed to upsert service"
-		r.logger.Errorw(msg, "err", err.Error(), "service", s)
+		msg := "Failed to begin transaction when saving service"
+		r.logger.Errorw(msg, "err", err.Error(), "serviceCode", s.Code)
 		return errors.DatabaseError(msg, &err)
 	}
-	for _, endpoint := range s.Endpoints {
-		err := r.upsertEndpoint(&endpoint, serviceDAO.ID)
+	err = r.upsertService(tx, s)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	endpointIDs := make([]interface{}, len(s.Endpoints))
+	//dependencyEndpointIDs := make([]interface{}, 0)
+	for idx, endpoint := range s.Endpoints {
+		err = r.upsertEndpoint(&endpoint, *s.ID)
+		endpointIDs[idx] = *endpoint.ID
 		if err != nil {
+			_ = tx.Rollback()
 			return err
 		}
-		// TODO: upsert deps
+		// TODO: remove any dangling endpoints, and also dangling deps
+		for depServiceCode, depEndpointCodes := range endpoint.Dependencies {
+			depService, err := r.FindByCode(depServiceCode)
+			if err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+			for _, depEndpointCode := range depEndpointCodes {
+				depEndpoint, err := r.findEndpointByServiceIDAndCode(*depService.ID, depEndpointCode)
+				if err != nil {
+					_ = tx.Rollback()
+					return err
+				}
+				err = r.upsertDependency(*endpoint.ID, depEndpoint.ID)
+				if err != nil {
+					_ = tx.Rollback()
+					return err
+				}
+			}
+		}
 	}
-	s.ID = &serviceDAO.ID
+	// We want to fully replace the service, so remove any endpoints that no longer exist
+	_, err = mysqldao.ServiceEndpoints(
+		qm.Where("service_id = ?", *s.ID),
+		qm.AndNotIn("id not in ?", endpointIDs...),
+	).DeleteAll(context.Background(), r.db)
+	if err != nil {
+		msg := "Failed to delete endpoints by ids"
+		r.logger.Errorw(msg, "err", err.Error(), "ids", endpointIDs)
+		_ = tx.Rollback()
+		return errors.DatabaseError(msg, &err)
+	}
+	_ = tx.Commit()
 	return nil
 }
 
 func (r *mysqlRepository) FindByCode(code Code) (*Service, error) {
-	serviceDAO, err := mysqldao.Services(qm.Where("code = ?", code)).One(context.Background(), r.db)
+	serviceDAO, err := mysqldao.Services(
+		qm.Load(qm.Rels(
+			mysqldao.ServiceRels.ServiceEndpoints,
+			mysqldao.ServiceEndpointRels.ServiceEndpointDependencies,
+		)),
+		qm.Where("code = ?", code),
+	).One(context.Background(), r.db)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
@@ -74,17 +115,88 @@ func (r *mysqlRepository) FindByCode(code Code) (*Service, error) {
 		r.logger.Errorw(msg, "err", err.Error(), "code", code)
 		return nil, errors.DatabaseError(msg, &err)
 	}
+	endpoints := make([]Endpoint, len(serviceDAO.R.ServiceEndpoints))
+	for idx, endpointDAO := range serviceDAO.R.ServiceEndpoints {
+		dependencies := make(map[Code][]EndpointCode)
+		for _, dependencyDAO := range endpointDAO.R.ServiceEndpointDependencies {
+			depEndpointDAO, err := mysqldao.ServiceEndpoints(
+				qm.Where("id = ?", dependencyDAO.DependencyServiceEndpointID),
+			).One(context.Background(), r.db)
+			if err != nil {
+				msg := "Failed to find service endpoint by id"
+				r.logger.Errorw(msg, "err", err.Error(), "id", dependencyDAO.DependencyServiceEndpointID)
+				return nil, errors.DatabaseError(msg, &err)
+			}
+			depServiceDAO, err := mysqldao.Services(
+				qm.Where("id = ?", depEndpointDAO.ServiceID),
+			).One(context.Background(), r.db)
+			if err != nil {
+				msg := "Failed to find service by id"
+				r.logger.Errorw(msg, "err", err.Error(), "id", depEndpointDAO.ServiceID)
+				return nil, errors.DatabaseError(msg, &err)
+			}
+			depEndpoints, ok := dependencies[depServiceDAO.Code]
+			if ok {
+				depEndpoints = append(depEndpoints, depEndpointDAO.Code)
+			} else {
+				depEndpoints = []EndpointCode{depEndpointDAO.Code}
+			}
+			dependencies[depServiceDAO.Code] = depEndpoints
+		}
+		endpoints[idx] = Endpoint{
+			Code:         endpointDAO.Code,
+			Name:         endpointDAO.Name,
+			Dependencies: dependencies,
+		}
+	}
 	service := Service{
 		ID:        &serviceDAO.ID,
 		Code:      serviceDAO.Code,
 		Name:      serviceDAO.Name,
-		Endpoints: nil, // TODO: populate
+		Endpoints: endpoints,
 	}
 	return &service, nil
 }
 
+func (r *mysqlRepository) findEndpointByServiceIDAndCode(serviceID int64, code EndpointCode) (*mysqldao.ServiceEndpoint, error) {
+	depEndpoint, err := mysqldao.ServiceEndpoints(
+		qm.Where("service_id = ?", serviceID),
+		qm.And("code = ?", code),
+	).One(context.Background(), r.db)
+	if err != nil {
+		msg := "Failed to find endpoint by service id and code"
+		r.logger.Errorw(msg,
+			"err", err.Error(),
+			"serviceId", serviceID,
+			"code", code,
+		)
+		return nil, errors.DatabaseError(msg, &err)
+	}
+	return depEndpoint, nil
+}
+
+func (r *mysqlRepository) upsertService(exec boil.ContextExecutor, service *Service) error {
+	serviceDAO := mysqldao.Service{
+		Code: service.Code,
+		Name: service.Name,
+	}
+	err := serviceDAO.Upsert(
+		context.Background(),
+		exec,
+		boil.Whitelist("name"),
+		boil.Infer(),
+	)
+	if err != nil {
+		msg := "Failed to upsert service"
+		r.logger.Errorw(msg, "err", err.Error(), "serviceCode", service.Code)
+		return errors.DatabaseError(msg, &err)
+	}
+	service.ID = &serviceDAO.ID
+	return nil
+}
+
 func (r *mysqlRepository) upsertEndpoint(endpoint *Endpoint, serviceID int64) error {
-	// sqlboiler cannot upsert on compound unique key, for MySQL, thus the get/insert/update workaround
+	// For MySQL, sqlboiler cannot upsert with a compound unique key, thus we do a get/insert-or-update workaround
 	endpointDAO, err := mysqldao.ServiceEndpoints(
 		qm.Where("code = ?", endpoint.Code),
 		qm.And("service_id = ?", serviceID),
@@ -118,6 +230,42 @@ func (r *mysqlRepository) upsertEndpoint(endpoint *Endpoint, serviceID int64) er
 		}
 	}
 	endpoint.ID = &endpointDAO.ID
+	return nil
+}
+
+func (r *mysqlRepository) upsertDependency(serviceEndpointID int64, dependencyServiceEndpointID int64) error {
+	// For MySQL, sqlboiler cannot upsert with a compound unique key, thus we do a get/insert-or-update workaround
+	dependencyDAO, err := mysqldao.ServiceEndpointDependencies(
+		qm.Where("service_endpoint_id = ?", serviceEndpointID),
+		qm.And("dependency_service_endpoint_id = ?", dependencyServiceEndpointID),
+	).One(context.Background(), r.db)
+	if err == sql.ErrNoRows {
+		// If it doesn't exist, insert it
+		dependencyDAO = &mysqldao.ServiceEndpointDependency{
+			ServiceEndpointID:           serviceEndpointID,
+			DependencyServiceEndpointID: dependencyServiceEndpointID,
+		}
+		err = dependencyDAO.Insert(context.Background(), r.db, boil.Infer())
+		if err != nil {
+			msg := "Failed to insert service endpoint dependency"
+			r.logger.Errorw(msg,
+				"err", err.Error(),
+				"serviceEndpointID", serviceEndpointID,
+				"dependencyServiceEndpointID", dependencyServiceEndpointID,
+			)
+			return errors.DatabaseError(msg, &err)
+		}
+	} else if err != nil {
+		// If the get failed, return a failure
+		msg := "Failed to get service endpoint dependency"
+		r.logger.Errorw(msg,
+			"err", err.Error(),
+			"serviceEndpointID", serviceEndpointID,
+			"dependencyServiceEndpointID", dependencyServiceEndpointID,
+		)
+		return errors.DatabaseError(msg, &err)
+	}
+	// If found, nothing to do - there's no data we need to update, we just need to ensure it exists
 	return nil
 }
 

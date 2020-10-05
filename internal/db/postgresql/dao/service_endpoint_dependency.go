@@ -55,14 +55,17 @@ var ServiceEndpointDependencyWhere = struct {
 
 // ServiceEndpointDependencyRels is where relationship names are stored.
 var ServiceEndpointDependencyRels = struct {
-	ServiceEndpoint string
+	DependencyServiceEndpoint string
+	ServiceEndpoint           string
 }{
-	ServiceEndpoint: "ServiceEndpoint",
+	DependencyServiceEndpoint: "DependencyServiceEndpoint",
+	ServiceEndpoint:           "ServiceEndpoint",
 }
 
 // serviceEndpointDependencyR is where relationships are stored.
 type serviceEndpointDependencyR struct {
-	ServiceEndpoint *ServiceEndpoint `boil:"ServiceEndpoint" json:"ServiceEndpoint" toml:"ServiceEndpoint" yaml:"ServiceEndpoint"`
+	DependencyServiceEndpoint *ServiceEndpoint `boil:"DependencyServiceEndpoint" json:"DependencyServiceEndpoint" toml:"DependencyServiceEndpoint" yaml:"DependencyServiceEndpoint"`
+	ServiceEndpoint           *ServiceEndpoint `boil:"ServiceEndpoint" json:"ServiceEndpoint" toml:"ServiceEndpoint" yaml:"ServiceEndpoint"`
 }
 
 // NewStruct creates a new relationship struct
@@ -355,6 +358,20 @@ func (q serviceEndpointDependencyQuery) Exists(ctx context.Context, exec boil.Co
 	return count > 0, nil
 }
 
+// DependencyServiceEndpoint pointed to by the foreign key.
+func (o *ServiceEndpointDependency) DependencyServiceEndpoint(mods ...qm.QueryMod) serviceEndpointQuery {
+	queryMods := []qm.QueryMod{
+		qm.Where("\"id\" = ?", o.DependencyServiceEndpointID),
+	}
+
+	queryMods = append(queryMods, mods...)
+
+	query := ServiceEndpoints(queryMods...)
+	queries.SetFrom(query.Query, "\"service_endpoint\"")
+
+	return query
+}
+
 // ServiceEndpoint pointed to by the foreign key.
 func (o *ServiceEndpointDependency) ServiceEndpoint(mods ...qm.QueryMod) serviceEndpointQuery {
 	queryMods := []qm.QueryMod{
@@ -367,6 +384,110 @@ func (o *ServiceEndpointDependency) ServiceEndpoint(mods ...qm.QueryMod) service
 	queries.SetFrom(query.Query, "\"service_endpoint\"")
 
 	return query
+}
+
+// LoadDependencyServiceEndpoint allows an eager lookup of values, cached into the
+// loaded structs of the objects. This is for an N-1 relationship.
+func (serviceEndpointDependencyL) LoadDependencyServiceEndpoint(ctx context.Context, e boil.ContextExecutor, singular bool, maybeServiceEndpointDependency interface{}, mods queries.Applicator) error {
+	var slice []*ServiceEndpointDependency
+	var object *ServiceEndpointDependency
+
+	if singular {
+		object = maybeServiceEndpointDependency.(*ServiceEndpointDependency)
+	} else {
+		slice = *maybeServiceEndpointDependency.(*[]*ServiceEndpointDependency)
+	}
+
+	args := make([]interface{}, 0, 1)
+	if singular {
+		if object.R == nil {
+			object.R = &serviceEndpointDependencyR{}
+		}
+		args = append(args, object.DependencyServiceEndpointID)
+
+	} else {
+	Outer:
+		for _, obj := range slice {
+			if obj.R == nil {
+				obj.R = &serviceEndpointDependencyR{}
+			}
+
+			for _, a := range args {
+				if a == obj.DependencyServiceEndpointID {
+					continue Outer
+				}
+			}
+
+			args = append(args, obj.DependencyServiceEndpointID)
+
+		}
+	}
+
+	if len(args) == 0 {
+		return nil
+	}
+
+	query := NewQuery(
+		qm.From(`service_endpoint`),
+		qm.WhereIn(`service_endpoint.id in ?`, args...),
+	)
+	if mods != nil {
+		mods.Apply(query)
+	}
+
+	results, err := query.QueryContext(ctx, e)
+	if err != nil {
+		return errors.Wrap(err, "failed to eager load ServiceEndpoint")
+	}
+
+	var resultSlice []*ServiceEndpoint
+	if err = queries.Bind(results, &resultSlice); err != nil {
+		return errors.Wrap(err, "failed to bind eager loaded slice ServiceEndpoint")
+	}
+
+	if err = results.Close(); err != nil {
+		return errors.Wrap(err, "failed to close results of eager load for service_endpoint")
+	}
+	if err = results.Err(); err != nil {
+		return errors.Wrap(err, "error occurred during iteration of eager loaded relations for service_endpoint")
+	}
+
+	if len(serviceEndpointDependencyAfterSelectHooks) != 0 {
+		for _, obj := range resultSlice {
+			if err := obj.doAfterSelectHooks(ctx, e); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(resultSlice) == 0 {
+		return nil
+	}
+
+	if singular {
+		foreign := resultSlice[0]
+		object.R.DependencyServiceEndpoint = foreign
+		if foreign.R == nil {
+			foreign.R = &serviceEndpointR{}
+		}
+		foreign.R.DependencyServiceEndpointServiceEndpointDependencies = append(foreign.R.DependencyServiceEndpointServiceEndpointDependencies, object)
+		return nil
+	}
+
+	for _, local := range slice {
+		for _, foreign := range resultSlice {
+			if local.DependencyServiceEndpointID == foreign.ID {
+				local.R.DependencyServiceEndpoint = foreign
+				if foreign.R == nil {
+					foreign.R = &serviceEndpointR{}
+				}
+				foreign.R.DependencyServiceEndpointServiceEndpointDependencies = append(foreign.R.DependencyServiceEndpointServiceEndpointDependencies, local)
+				break
+			}
+		}
+	}
+
+	return nil
 }
 
 // LoadServiceEndpoint allows an eager lookup of values, cached into the
@@ -468,6 +589,53 @@ func (serviceEndpointDependencyL) LoadServiceEndpoint(ctx context.Context, e boi
 				break
 			}
 		}
+	}
+
+	return nil
+}
+
+// SetDependencyServiceEndpoint of the serviceEndpointDependency to the related item.
+// Sets o.R.DependencyServiceEndpoint to related.
+// Adds o to related.R.DependencyServiceEndpointServiceEndpointDependencies.
+func (o *ServiceEndpointDependency) SetDependencyServiceEndpoint(ctx context.Context, exec boil.ContextExecutor, insert bool, related *ServiceEndpoint) error {
+	var err error
+	if insert {
+		if err = related.Insert(ctx, exec, boil.Infer()); err != nil {
+			return errors.Wrap(err, "failed to insert into foreign table")
+		}
+	}
+
+	updateQuery := fmt.Sprintf(
+		"UPDATE \"service_endpoint_dependency\" SET %s WHERE %s",
+		strmangle.SetParamNames("\"", "\"", 1, []string{"dependency_service_endpoint_id"}),
+		strmangle.WhereClause("\"", "\"", 2, serviceEndpointDependencyPrimaryKeyColumns),
+	)
+	values := []interface{}{related.ID, o.ID}
+
+	if boil.IsDebug(ctx) {
+		writer := boil.DebugWriterFrom(ctx)
+		fmt.Fprintln(writer, updateQuery)
+		fmt.Fprintln(writer, values)
+	}
+	if _, err = exec.ExecContext(ctx, updateQuery, values...); err != nil {
+		return errors.Wrap(err, "failed to update local table")
+	}
+
+	o.DependencyServiceEndpointID = related.ID
+	if o.R == nil {
+		o.R = &serviceEndpointDependencyR{
+			DependencyServiceEndpoint: related,
+		}
+	} else {
+		o.R.DependencyServiceEndpoint = related
+	}
+
+	if related.R == nil {
+		related.R = &serviceEndpointR{
+			DependencyServiceEndpointServiceEndpointDependencies: ServiceEndpointDependencySlice{o},
+		}
+	} else {
+		related.R.DependencyServiceEndpointServiceEndpointDependencies = append(related.R.DependencyServiceEndpointServiceEndpointDependencies, o)
 	}
 
 	return nil

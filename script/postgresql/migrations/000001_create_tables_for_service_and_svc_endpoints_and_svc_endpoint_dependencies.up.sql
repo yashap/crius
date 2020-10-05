@@ -18,5 +18,6 @@ CREATE TABLE IF NOT EXISTS service_endpoint_dependency (
     service_endpoint_id BIGINT NOT NULL,
     dependency_service_endpoint_id BIGINT NOT NULL,
     UNIQUE (service_endpoint_id, dependency_service_endpoint_id),
-    CONSTRAINT fk_service_endpoint FOREIGN KEY (service_endpoint_id) REFERENCES service_endpoint (id) ON DELETE CASCADE ON UPDATE RESTRICT
+    CONSTRAINT fk_service_endpoint FOREIGN KEY (service_endpoint_id) REFERENCES service_endpoint (id) ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT fk_dependency_service_endpoint FOREIGN KEY (dependency_service_endpoint_id) REFERENCES service_endpoint (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 );

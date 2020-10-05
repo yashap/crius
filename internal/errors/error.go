@@ -13,8 +13,10 @@ type Error struct {
 	Message    string
 	StatusCode int
 	SubCode    uuid.UUID
-	cause      *error // TODO: read about interfaces, should this be a pointer?
+	cause      *error // TODO: read about interfaces, should this be a pointer? Or is an interface automatically nil-able?
 }
+
+var sentinel error = errors.New("error did not have a cause")
 
 func (e *Error) Error() string {
 	return fmt.Sprintf(
@@ -27,18 +29,23 @@ func (e *Error) Unwrap() error {
 	if e.cause != nil {
 		return *e.cause
 	}
-	return errors.New("error did not have a cause")
+	return sentinel
 }
 
 func SetResponse(err error, c *gin.Context) {
 	var e *Error
 	if errors.As(err, &e) {
+		var cause *string = nil
+		if e.Unwrap() != sentinel {
+			causeMsg := e.Unwrap().Error()
+			cause = &causeMsg
+		}
 		c.JSON(
 			e.StatusCode,
 			gin.H{
 				"message":  e.Message,
 				"sub_code": e.SubCode.String(),
-				"cause":    e.Unwrap().Error(),
+				"cause":    cause,
 			},
 		)
 	} else {

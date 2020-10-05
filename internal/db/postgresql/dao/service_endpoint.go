@@ -60,17 +60,20 @@ var ServiceEndpointWhere = struct {
 
 // ServiceEndpointRels is where relationship names are stored.
 var ServiceEndpointRels = struct {
-	Service                     string
-	ServiceEndpointDependencies string
+	Service                                              string
+	DependencyServiceEndpointServiceEndpointDependencies string
+	ServiceEndpointDependencies                          string
 }{
-	Service:                     "Service",
-	ServiceEndpointDependencies: "ServiceEndpointDependencies",
+	Service: "Service",
+	DependencyServiceEndpointServiceEndpointDependencies: "DependencyServiceEndpointServiceEndpointDependencies",
+	ServiceEndpointDependencies:                          "ServiceEndpointDependencies",
 }
 
 // serviceEndpointR is where relationships are stored.
 type serviceEndpointR struct {
-	Service                     *Service                       `boil:"Service" json:"Service" toml:"Service" yaml:"Service"`
-	ServiceEndpointDependencies ServiceEndpointDependencySlice `boil:"ServiceEndpointDependencies" json:"ServiceEndpointDependencies" toml:"ServiceEndpointDependencies" yaml:"ServiceEndpointDependencies"`
+	Service                                              *Service                       `boil:"Service" json:"Service" toml:"Service" yaml:"Service"`
+	DependencyServiceEndpointServiceEndpointDependencies ServiceEndpointDependencySlice `boil:"DependencyServiceEndpointServiceEndpointDependencies" json:"DependencyServiceEndpointServiceEndpointDependencies" toml:"DependencyServiceEndpointServiceEndpointDependencies" yaml:"DependencyServiceEndpointServiceEndpointDependencies"`
+	ServiceEndpointDependencies                          ServiceEndpointDependencySlice `boil:"ServiceEndpointDependencies" json:"ServiceEndpointDependencies" toml:"ServiceEndpointDependencies" yaml:"ServiceEndpointDependencies"`
 }
 
 // NewStruct creates a new relationship struct
@@ -377,6 +380,27 @@ func (o *ServiceEndpoint) Service(mods ...qm.QueryMod) serviceQuery {
 	return query
 }
 
+// DependencyServiceEndpointServiceEndpointDependencies retrieves all the service_endpoint_dependency's ServiceEndpointDependencies with an executor via dependency_service_endpoint_id column.
+func (o *ServiceEndpoint) DependencyServiceEndpointServiceEndpointDependencies(mods ...qm.QueryMod) serviceEndpointDependencyQuery {
+	var queryMods []qm.QueryMod
+	if len(mods) != 0 {
+		queryMods = append(queryMods, mods...)
+	}
+
+	queryMods = append(queryMods,
+		qm.Where("\"service_endpoint_dependency\".\"dependency_service_endpoint_id\"=?", o.ID),
+	)
+
+	query := ServiceEndpointDependencies(queryMods...)
+	queries.SetFrom(query.Query, "\"service_endpoint_dependency\"")
+
+	if len(queries.GetSelect(query.Query)) == 0 {
+		queries.SetSelect(query.Query, []string{"\"service_endpoint_dependency\".*"})
+	}
+
+	return query
+}
+
 // ServiceEndpointDependencies retrieves all the service_endpoint_dependency's ServiceEndpointDependencies with an executor.
 func (o *ServiceEndpoint) ServiceEndpointDependencies(mods ...qm.QueryMod) serviceEndpointDependencyQuery {
 	var queryMods []qm.QueryMod
@@ -494,6 +518,104 @@ func (serviceEndpointL) LoadService(ctx context.Context, e boil.ContextExecutor,
 					foreign.R = &serviceR{}
 				}
 				foreign.R.ServiceEndpoints = append(foreign.R.ServiceEndpoints, local)
+				break
+			}
+		}
+	}
+
+	return nil
+}
+
+// LoadDependencyServiceEndpointServiceEndpointDependencies allows an eager lookup of values, cached into the
+// loaded structs of the objects. This is for a 1-M or N-M relationship.
+func (serviceEndpointL) LoadDependencyServiceEndpointServiceEndpointDependencies(ctx context.Context, e boil.ContextExecutor, singular bool, maybeServiceEndpoint interface{}, mods queries.Applicator) error {
+	var slice []*ServiceEndpoint
+	var object *ServiceEndpoint
+
+	if singular {
+		object = maybeServiceEndpoint.(*ServiceEndpoint)
+	} else {
+		slice = *maybeServiceEndpoint.(*[]*ServiceEndpoint)
+	}
+
+	args := make([]interface{}, 0, 1)
+	if singular {
+		if object.R == nil {
+			object.R = &serviceEndpointR{}
+		}
+		args = append(args, object.ID)
+	} else {
+	Outer:
+		for _, obj := range slice {
+			if obj.R == nil {
+				obj.R = &serviceEndpointR{}
+			}
+
+			for _, a := range args {
+				if a == obj.ID {
+					continue Outer
+				}
+			}
+
+			args = append(args, obj.ID)
+		}
+	}
+
+	if len(args) == 0 {
+		return nil
+	}
+
+	query := NewQuery(
+		qm.From(`service_endpoint_dependency`),
+		qm.WhereIn(`service_endpoint_dependency.dependency_service_endpoint_id in ?`, args...),
+	)
+	if mods != nil {
+		mods.Apply(query)
+	}
+
+	results, err := query.QueryContext(ctx, e)
+	if err != nil {
+		return errors.Wrap(err, "failed to eager load service_endpoint_dependency")
+	}
+
+	var resultSlice []*ServiceEndpointDependency
+	if err = queries.Bind(results, &resultSlice); err != nil {
+		return errors.Wrap(err, "failed to bind eager loaded slice service_endpoint_dependency")
+	}
+
+	if err = results.Close(); err != nil {
+		return errors.Wrap(err, "failed to close results in eager load on service_endpoint_dependency")
+	}
+	if err = results.Err(); err != nil {
+		return errors.Wrap(err, "error occurred during iteration of eager loaded relations for service_endpoint_dependency")
+	}
+
+	if len(serviceEndpointDependencyAfterSelectHooks) != 0 {
+		for _, obj := range resultSlice {
+			if err := obj.doAfterSelectHooks(ctx, e); err != nil {
+				return err
+			}
+		}
+	}
+	if singular {
+		object.R.DependencyServiceEndpointServiceEndpointDependencies = resultSlice
+		for _, foreign := range resultSlice {
+			if foreign.R == nil {
+				foreign.R = &serviceEndpointDependencyR{}
+			}
+			foreign.R.DependencyServiceEndpoint = object
+		}
+		return nil
+	}
+
+	for _, foreign := range resultSlice {
+		for _, local := range slice {
+			if local.ID == foreign.DependencyServiceEndpointID {
+				local.R.DependencyServiceEndpointServiceEndpointDependencies = append(local.R.DependencyServiceEndpointServiceEndpointDependencies, foreign)
+				if foreign.R == nil {
+					foreign.R = &serviceEndpointDependencyR{}
+				}
+				foreign.R.DependencyServiceEndpoint = local
 				break
 			}
 		}
@@ -644,6 +766,59 @@ func (o *ServiceEndpoint) SetService(ctx context.Context, exec boil.ContextExecu
 		related.R.ServiceEndpoints = append(related.R.ServiceEndpoints, o)
 	}
 
+	return nil
+}
+
+// AddDependencyServiceEndpointServiceEndpointDependencies adds the given related objects to the existing relationships
+// of the service_endpoint, optionally inserting them as new records.
+// Appends related to o.R.DependencyServiceEndpointServiceEndpointDependencies.
+// Sets related.R.DependencyServiceEndpoint appropriately.
+func (o *ServiceEndpoint) AddDependencyServiceEndpointServiceEndpointDependencies(ctx context.Context, exec boil.ContextExecutor, insert bool, related ...*ServiceEndpointDependency) error {
+	var err error
+	for _, rel := range related {
+		if insert {
+			rel.DependencyServiceEndpointID = o.ID
+			if err = rel.Insert(ctx, exec, boil.Infer()); err != nil {
+				return errors.Wrap(err, "failed to insert into foreign table")
+			}
+		} else {
+			updateQuery := fmt.Sprintf(
+				"UPDATE \"service_endpoint_dependency\" SET %s WHERE %s",
+				strmangle.SetParamNames("\"", "\"", 1, []string{"dependency_service_endpoint_id"}),
+				strmangle.WhereClause("\"", "\"", 2, serviceEndpointDependencyPrimaryKeyColumns),
+			)
+			values := []interface{}{o.ID, rel.ID}
+
+			if boil.IsDebug(ctx) {
+				writer := boil.DebugWriterFrom(ctx)
+				fmt.Fprintln(writer, updateQuery)
+				fmt.Fprintln(writer, values)
+			}
+			if _, err = exec.ExecContext(ctx, updateQuery, values...); err != nil {
+				return errors.Wrap(err, "failed to update foreign table")
+			}
+
+			rel.DependencyServiceEndpointID = o.ID
+		}
+	}
+
+	if o.R == nil {
+		o.R = &serviceEndpointR{
+			DependencyServiceEndpointServiceEndpointDependencies: related,
+		}
+	} else {
+		o.R.DependencyServiceEndpointServiceEndpointDependencies = append(o.R.DependencyServiceEndpointServiceEndpointDependencies, related...)
+	}
+
+	for _, rel := range related {
+		if rel.R == nil {
+			rel.R = &serviceEndpointDependencyR{
+				DependencyServiceEndpoint: o,
+			}
+		} else {
+			rel.R.DependencyServiceEndpoint = o
+		}
+	}
 	return nil
 }
 

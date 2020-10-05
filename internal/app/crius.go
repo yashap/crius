@@ -65,7 +65,7 @@ func NewCrius(dbURL *dburl.URL) Crius {
 			serviceQueries, serviceEndpointQueries, serviceEndpointDependencyQueries, logger,
 		)
 	} else if dbURL.Driver == "mysql" {
-		serviceRepository = service.NewRepository2(database, logger)
+		serviceRepository = service.NewRepository2(dbURL, database, logger)
 	} else {
 		log.Fatal("fooooo!!!!")
 	}
