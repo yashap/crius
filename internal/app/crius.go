@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +9,6 @@ import (
 
 	_ "github.com/lib/pq" // Postgres driver
 	"github.com/yashap/crius/internal/controller"
-	"github.com/yashap/crius/internal/dao"
 	"github.com/yashap/crius/internal/db"
 	"github.com/yashap/crius/internal/domain/service"
 	"go.uber.org/zap"
@@ -46,30 +44,7 @@ func NewCrius(dbURL *dburl.URL) Crius {
 	if err != nil {
 		log.Fatalf("Failed to connect to database. URL: %s ; Error: %s", dbURL, err.Error())
 	}
-	serviceQueries, err := dao.NewServiceQueries(dbURL, database, logger)
-	if err != nil {
-		fmt.Printf("Failed to create ServiceQueries. DB URL: %s, Error: %s", dbURL, err.Error()) // TODO log.Fatalf
-	}
-	serviceEndpointQueries, err := dao.NewServiceEndpointQueries(dbURL, database, logger)
-	if err != nil {
-		fmt.Printf("Failed to create ServiceEndpointQueries. DB URL: %s, Error: %s", dbURL, err.Error()) // TODO log.Fatalf
-	}
-	serviceEndpointDependencyQueries, err := dao.NewServiceEndpointDependencyQueries(dbURL, database, logger)
-	if err != nil {
-		fmt.Printf("Failed to create ServiceEndpointDependencyQueries. DB URL: %s, Error: %s", dbURL, err.Error()) // TODO log.Fatalf
-	}
-	// TODO: clean up the below
-	var serviceRepository service.Repository
-	if dbURL.Driver == "postgresql" {
-		serviceRepository = service.NewRepository(
-			serviceQueries, serviceEndpointQueries, serviceEndpointDependencyQueries, logger,
-		)
-	} else if dbURL.Driver == "mysql" {
-		serviceRepository = service.NewRepository2(dbURL, database, logger)
-	} else {
-		log.Fatal("fooooo!!!!")
-	}
-
+	serviceRepository := service.NewRepository(dbURL, database, logger)
 	router := controller.SetupRouter(serviceRepository, logger)
 
 	return &crius{

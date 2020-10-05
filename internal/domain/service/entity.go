@@ -1,9 +1,5 @@
 package service
 
-import (
-	"github.com/yashap/crius/internal/dao"
-)
-
 // Code is a code that uniquely identifies a Service
 type Code = string
 
@@ -53,20 +49,5 @@ func MakeService(
 		Code:      code,
 		Name:      name,
 		Endpoints: endpoints,
-	}
-}
-
-func (s *Service) toDAO() dao.Service {
-	return dao.Service{
-		Code: s.Code,
-		Name: s.Name,
-	}
-}
-
-func (e *Endpoint) toDAO(serviceID int64) dao.ServiceEndpoint {
-	return dao.ServiceEndpoint{
-		ServiceID: serviceID,
-		Code:      e.Code,
-		Name:      e.Name,
 	}
 }
