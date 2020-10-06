@@ -1,9 +1,7 @@
 package db
 
 import (
-	_ "github.com/golang-migrate/migrate/v4/source/file" // For loading migration files
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq" // Postgres driver
 	"github.com/xo/dburl"
 	"github.com/yashap/crius/internal/db/mysql"
 	"github.com/yashap/crius/internal/db/postgresql"
