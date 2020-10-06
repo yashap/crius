@@ -91,11 +91,11 @@ run: pg-run-db run-service
 run-service:
 	CRIUS_DB_URL=$(POSTGRES_URL) CRIUS_MIGRATIONS_DIR=$(POSTGRES_MIGRATIONS_DIR) PORT=$(CRIUS_PORT) go run $(ROOT_DIR)/internal/cmd/main/main.go
 
-.PHONY: run
+.PHONY: run-mysql
 ## Run the DB (MySQL) and HTTP server (will wipe local DB)
 run-mysql: mysql-run-db run-service-mysql
 
-.PHONY: run-service
+.PHONY: run-service-mysql
 ## Run the Crius HTTP server (against MySQL)
 run-service-mysql:
 	CRIUS_DB_URL=$(MYSQL_URL) CRIUS_MIGRATIONS_DIR=$(MYSQL_MIGRATIONS_DIR) PORT=$(CRIUS_PORT) go run $(ROOT_DIR)/internal/cmd/main/main.go
@@ -113,6 +113,7 @@ mysql-run-db:
 	@$(MAKE) mysql-await-db
 	@$(MAKE) mysql-create-user
 
+.PHONY: mysql-create-user
 # Internal target, creates MySQL users
 mysql-create-user:
 	docker cp script/mysql/devusers/create_user.sql criusmysql:/usr/local/bin/create_user.sql
