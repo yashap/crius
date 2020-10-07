@@ -29,6 +29,10 @@ make run-service
 make tidy test
 ```
 
+### Modifying the DB Schema
+
+TODO - explain the process
+
 ## Special Thanks
 
 Special thanks to [Jet Brains](https://www.jetbrains.com/?from=crius) for contributing a free IDE licence to this project via their [open source licence program](https://www.jetbrains.com/community/opensource/#support?from=crius).

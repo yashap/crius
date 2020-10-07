@@ -17,6 +17,7 @@ import (
 var testDB *util.TestDB
 
 func TestMain(m *testing.M) {
+	// TODO: test both Postgres AND MySQL
 	testDB = util.NewTestDB()
 
 	testExitCode := m.Run()
