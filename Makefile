@@ -101,7 +101,7 @@ run-service-mysql:
 	CRIUS_DB_URL=$(MYSQL_URL) CRIUS_MIGRATIONS_DIR=$(MYSQL_MIGRATIONS_DIR) PORT=$(CRIUS_PORT) go run $(ROOT_DIR)/internal/cmd/main/main.go
 
 .PHONY: test
-## Run all unit and integration tests
+## Run all unit and integration tests (be patient, integration tests can take a bit while DBs are spinning up)
 test:
 	go test -v ./...
 

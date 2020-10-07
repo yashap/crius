@@ -76,6 +76,15 @@ func MakeServiceFromEntity(s service.Service) Service {
 	}
 }
 
+// MakeServicesFromEntities constructs Service DTOs from Service Entities
+func MakeServicesFromEntities(svcs []service.Service) []Service {
+	dtos := make([]Service, len(svcs))
+	for idx, s := range svcs {
+		dtos[idx] = MakeServiceFromEntity(s)
+	}
+	return dtos
+}
+
 func endpointsToEntities(endpoints []Endpoint) []service.Endpoint {
 	endpointEntities := make([]service.Endpoint, len(endpoints))
 	for idx, endpoint := range endpoints {

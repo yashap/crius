@@ -21,6 +21,7 @@ func SetupRouter(database db.Database, serviceRepository service.Repository, log
 	r.Use(ginzap.Ginzap(logger.Desugar(), time.RFC3339, true))
 	r.Use(ginzap.RecoveryWithZap(logger.Desugar(), true))
 	r.POST("/services", serviceController.Create)
+	r.GET("/services", serviceController.GetAll)
 	r.GET("/services/:code", serviceController.GetByCode)
 	// TODO r.GET
 	// TODO r.DELETE

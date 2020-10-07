@@ -95,3 +95,16 @@ func (sc *Service) GetByCode(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, dto.MakeServiceFromEntity(*svc))
 }
+
+// GetAll gets every service.Service
+// GET /services
+func (sc *Service) GetAll(c *gin.Context) {
+	ctx, cancel := context.WithCancel(sc.ctx)
+	defer cancel()
+	services, err := sc.serviceRepository.FindAll(ctx)
+	if err != nil {
+		errors.SetResponse(err, c)
+		return
+	}
+	c.JSON(http.StatusNotImplemented, dto.MakeServicesFromEntities(services))
+}

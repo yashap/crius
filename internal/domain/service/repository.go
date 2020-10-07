@@ -14,6 +14,8 @@ type Repository interface {
 	Save(ctx context.Context, s *Service) error
 	// FindByCode finds a Service by its Code
 	FindByCode(ctx context.Context, code Code) (*Service, error)
+	// FindAll finds every Service
+	FindAll(ctx context.Context) ([]Service, error)
 }
 
 func NewRepository(database db.Database, logger *zap.SugaredLogger) Repository {

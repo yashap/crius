@@ -14,17 +14,13 @@ import (
 type Crius interface {
 	// ListenAndServe starts the HTTP server
 	ListenAndServe()
-
-	// ServiceRepository returns the app's service.Repository
-	ServiceRepository() *service.Repository
 	// Router returns the app's Router
 	Router() *gin.Engine
 }
 
 type crius struct {
-	database          db.Database
-	serviceRepository *service.Repository
-	router            *gin.Engine
+	database db.Database
+	router   *gin.Engine
 }
 
 // NewCrius creates a new Crius application
@@ -36,9 +32,8 @@ func NewCrius(database db.Database) Crius {
 	router := controller.SetupRouter(database, serviceRepository, logger)
 
 	return &crius{
-		database:          database,
-		serviceRepository: &serviceRepository,
-		router:            router,
+		database: database,
+		router:   router,
 	}
 }
 
@@ -47,10 +42,6 @@ func (c *crius) ListenAndServe() {
 	if err != nil {
 		panic(errors.InitializationError("failed to run server", errors.Details{}, &err))
 	}
-}
-
-func (c *crius) ServiceRepository() *service.Repository {
-	return c.serviceRepository
 }
 
 func (c *crius) Router() *gin.Engine {

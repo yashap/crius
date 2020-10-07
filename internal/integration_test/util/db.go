@@ -10,7 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	_ "github.com/lib/pq" // Postgres driver
+	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/lib/pq"              // Postgres driver
 	"github.com/ory/dockertest/v3"
 )
 
@@ -20,7 +21,7 @@ type TestDB struct {
 	Database  db.Database
 }
 
-func NewTestDB() *TestDB {
+func NewPostgresTestDB() *TestDB {
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
@@ -52,7 +53,6 @@ func NewTestDB() *TestDB {
 	}
 	// Ensure container is up and ready to accept connections
 	if err = pool.Retry(func() error {
-		var err error
 		dbase, err := sql.Open(
 			dbURL.Driver,
 			dbURL.DSN,
@@ -66,6 +66,76 @@ func NewTestDB() *TestDB {
 		log.Fatalf("Could not connect to Postgres Docker container: %s", err.Error())
 	}
 
+	database := db.NewDatabase(rawDBURL, migrationsDir)
+	database.Migrate()
+	testDB := &TestDB{
+		pool:      pool,
+		container: resource,
+		Database:  database,
+	}
+
+	return testDB
+}
+
+func NewMySQLTestDB() *TestDB {
+	pool, err := dockertest.NewPool("")
+	if err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+
+	user, password, rootUser, rootPassword, dbName := "testuser", "testpass", "root", "roottestpass", "crius"
+	resource, err := pool.Run("mysql", "8", []string{
+		"MYSQL_ROOT_PASSWORD=" + rootPassword,
+		"MYSQL_DATABASE=" + dbName,
+	})
+	if err != nil {
+		log.Fatalf("Could not start resource: %s", err)
+	}
+	port, _ := strconv.Atoi(resource.GetPort("3306/tcp"))
+
+	relativeMigrationsDir := "../../script/mysql/migrations"
+	migrationsDir, err := filepath.Abs(relativeMigrationsDir)
+	if err != nil {
+		panic(errors.InitializationError("Could not convert to absolute path",
+			errors.Details{"relativePath": relativeMigrationsDir},
+			nil,
+		))
+	}
+	rawDBURL := fmt.Sprintf("mysql://%s:%s@127.0.0.1:%d/%s?multiStatements=true", rootUser, rootPassword, port, dbName)
+	dbURL, err := dburl.Parse(rawDBURL)
+	if err != nil {
+		panic(errors.InitializationError("failed to parse DB URL", errors.Details{"url": rawDBURL}, nil))
+	}
+	// Ensure container is up and ready to accept connections
+	var dbase *sql.DB
+	if err = pool.Retry(func() error {
+		dbase, err = sql.Open(
+			dbURL.Driver,
+			dbURL.DSN,
+		)
+		if err != nil {
+			return err
+		}
+		return dbase.Ping()
+	}); err != nil {
+		shutdown(pool, resource, false)
+		log.Fatalf("Could not connect to MySQL Docker container: %s", err.Error())
+	}
+
+	_, err = dbase.Exec(fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", user, password))
+	if err != nil {
+		panic(err)
+	}
+	_, err = dbase.Exec(fmt.Sprintf("GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'", dbName, user))
+	if err != nil {
+		panic(err)
+	}
+	_, err = dbase.Exec("FLUSH PRIVILEGES")
+	if err != nil {
+		panic(err)
+	}
+
+	rawDBURL = fmt.Sprintf("mysql://%s:%s@127.0.0.1:%d/%s?multiStatements=true", user, password, port, dbName)
 	database := db.NewDatabase(rawDBURL, migrationsDir)
 	database.Migrate()
 	testDB := &TestDB{
