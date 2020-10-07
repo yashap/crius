@@ -13,7 +13,7 @@ import (
 )
 
 // Migrate performs all database migrations
-func Migrate(db *sqlx.DB, dbURL *dburl.URL, migrationDir string) {
+func Migrate(db *sqlx.DB, dbURL dburl.URL, migrationDir string) {
 	driver, err := postgres.WithInstance(db.DB, &postgres.Config{})
 	if err != nil {
 		log.Fatal(err)

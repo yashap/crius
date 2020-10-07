@@ -3,31 +3,24 @@ package service
 import (
 	"context"
 	"database/sql"
-	"github.com/jmoiron/sqlx"
 	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
+	"github.com/yashap/crius/internal/db"
 	pgdao "github.com/yashap/crius/internal/db/postgresql/dao"
 	"github.com/yashap/crius/internal/errors"
 	"go.uber.org/zap"
 )
 
 type postgresRepository struct {
-	db     *sqlx.DB
-	logger *zap.SugaredLogger
+	database db.Database
+	logger   *zap.SugaredLogger
 }
 
-func (r *postgresRepository) Save(s *Service) error {
-	// TODO: move transaction handling to top level, pass through in Context
-	tx, err := r.db.BeginTx(context.Background(), nil)
-	if err != nil {
-		msg := "Failed to begin transaction when saving service"
-		r.logger.Errorw(msg, "err", err.Error(), "serviceCode", s.Code)
-		return errors.DatabaseError(msg, &err)
-	}
+func (r *postgresRepository) Save(ctx context.Context, s *Service) error {
+	exec := r.database.GetExecutor(ctx)
 	serviceDAO := pgdao.Service{Code: s.Code, Name: s.Name}
-	err = r.upsertService(tx, &serviceDAO)
+	err := r.upsertService(exec, &serviceDAO)
 	if err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	s.ID = &serviceDAO.ID
@@ -38,32 +31,28 @@ func (r *postgresRepository) Save(s *Service) error {
 			Code:      endpoint.Code,
 			Name:      endpoint.Name,
 		}
-		err = r.upsertEndpoint(tx, &endpointDAO)
+		err = r.upsertEndpoint(exec, &endpointDAO)
 		endpoint.ID = &endpointDAO.ID
 		endpointIDs[idx] = endpointDAO.ID
 		if err != nil {
-			_ = tx.Rollback()
 			return err
 		}
 		for depServiceCode, depEndpointCodes := range endpoint.Dependencies {
-			depService, err := r.FindByCode(depServiceCode)
+			depService, err := r.FindByCode(ctx, depServiceCode)
 			if err != nil {
-				_ = tx.Rollback()
 				return err
 			}
 			for _, depEndpointCode := range depEndpointCodes {
-				depEndpoint, err := r.findEndpointByServiceIDAndCode(tx, *depService.ID, depEndpointCode)
+				depEndpoint, err := r.findEndpointByServiceIDAndCode(exec, *depService.ID, depEndpointCode)
 				if err != nil {
-					_ = tx.Rollback()
 					return err
 				}
 				dependencyDAO := pgdao.ServiceEndpointDependency{
 					ServiceEndpointID:           endpointDAO.ID,
 					DependencyServiceEndpointID: depEndpoint.ID,
 				}
-				err = r.upsertDependency(tx, &dependencyDAO)
+				err = r.upsertDependency(exec, &dependencyDAO)
 				if err != nil {
-					_ = tx.Rollback()
 					return err
 				}
 			}
@@ -73,32 +62,30 @@ func (r *postgresRepository) Save(s *Service) error {
 	_, err = pgdao.ServiceEndpoints(
 		qm.Where("service_id = ?", serviceDAO.ID),
 		qm.AndNotIn("id not in ?", endpointIDs...),
-	).DeleteAll(context.Background(), tx)
+	).DeleteAll(ctx, exec)
 	if err != nil {
-		msg := "Failed to delete endpoints by ids"
-		r.logger.Errorw(msg, "err", err.Error(), "ids", endpointIDs)
-		_ = tx.Rollback()
-		return errors.DatabaseError(msg, &err)
+		return errors.DatabaseError("Failed to delete endpoints by ids",
+			errors.Details{"ids": endpointIDs}, &err,
+		).Logged(r.logger)
 	}
-	_ = tx.Commit()
-	// TODO: remove any dangling dependencies (that should no longer exist)
 	return nil
 }
 
-func (r *postgresRepository) FindByCode(code Code) (*Service, error) {
+func (r *postgresRepository) FindByCode(ctx context.Context, code Code) (*Service, error) {
+	exec := r.database.GetExecutor(ctx)
 	serviceDAO, err := pgdao.Services(
 		qm.Load(qm.Rels(
 			pgdao.ServiceRels.ServiceEndpoints,
 			pgdao.ServiceEndpointRels.ServiceEndpointDependencies,
 		)),
 		qm.Where("code = ?", code),
-	).One(context.Background(), r.db)
+	).One(ctx, exec)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
-		msg := "Failed to find service by code"
-		r.logger.Errorw(msg, "err", err.Error(), "code", code)
-		return nil, errors.DatabaseError(msg, &err)
+		return nil, errors.DatabaseError("Failed to find service by code",
+			errors.Details{"code": code}, &err,
+		).Logged(r.logger)
 	}
 	endpoints := make([]Endpoint, len(serviceDAO.R.ServiceEndpoints))
 	for idx, endpointDAO := range serviceDAO.R.ServiceEndpoints {
@@ -106,19 +93,19 @@ func (r *postgresRepository) FindByCode(code Code) (*Service, error) {
 		for _, dependencyDAO := range endpointDAO.R.ServiceEndpointDependencies {
 			depEndpointDAO, err := pgdao.ServiceEndpoints(
 				qm.Where("id = ?", dependencyDAO.DependencyServiceEndpointID),
-			).One(context.Background(), r.db)
+			).One(ctx, exec)
 			if err != nil {
-				msg := "Failed to find service endpoint by id"
-				r.logger.Errorw(msg, "err", err.Error(), "id", dependencyDAO.DependencyServiceEndpointID)
-				return nil, errors.DatabaseError(msg, &err)
+				return nil, errors.DatabaseError("Failed to find service endpoint by id",
+					errors.Details{"id": dependencyDAO.DependencyServiceEndpointID}, &err,
+				).Logged(r.logger)
 			}
 			depServiceDAO, err := pgdao.Services(
 				qm.Where("id = ?", depEndpointDAO.ServiceID),
-			).One(context.Background(), r.db)
+			).One(ctx, exec)
 			if err != nil {
-				msg := "Failed to find service by id"
-				r.logger.Errorw(msg, "err", err.Error(), "id", depEndpointDAO.ServiceID)
-				return nil, errors.DatabaseError(msg, &err)
+				return nil, errors.DatabaseError("Failed to find service by id",
+					errors.Details{"id": depEndpointDAO.ServiceID}, &err,
+				).Logged(r.logger)
 			}
 			depEndpoints, ok := dependencies[depServiceDAO.Code]
 			if ok {
@@ -153,13 +140,9 @@ func (r *postgresRepository) findEndpointByServiceIDAndCode(
 		qm.And("code = ?", code),
 	).One(context.Background(), exec)
 	if err != nil {
-		msg := "Failed to find endpoint by service id and code"
-		r.logger.Errorw(msg,
-			"err", err.Error(),
-			"serviceId", serviceID,
-			"code", code,
-		)
-		return nil, errors.DatabaseError(msg, &err)
+		return nil, errors.DatabaseError("Failed to find endpoint by service id and code",
+			errors.Details{"serviceId": serviceID, "code": code}, &err,
+		).Logged(r.logger)
 	}
 	return depEndpoint, nil
 }
@@ -174,9 +157,9 @@ func (r *postgresRepository) upsertService(exec boil.ContextExecutor, service *p
 		boil.Infer(),
 	)
 	if err != nil {
-		msg := "Failed to upsert service"
-		r.logger.Errorw(msg, "err", err.Error(), "serviceCode", service.Code)
-		return errors.DatabaseError(msg, &err)
+		return errors.DatabaseError("Failed to upsert service",
+			errors.Details{"serviceCode": service.Code}, &err,
+		).Logged(r.logger)
 	}
 	return nil
 }
@@ -191,9 +174,9 @@ func (r *postgresRepository) upsertEndpoint(exec boil.ContextExecutor, endpoint 
 		boil.Infer(),
 	)
 	if err != nil {
-		msg := "Failed to upsert endpoint"
-		r.logger.Errorw(msg, "err", err.Error(), "serviceId", endpoint.ServiceID, "code", endpoint.Code)
-		return errors.DatabaseError(msg, &err)
+		return errors.DatabaseError("Failed to upsert service endpoint",
+			errors.Details{"serviceID": endpoint.ServiceID, "code": endpoint.Code}, &err,
+		).Logged(r.logger)
 	}
 	return nil
 }
@@ -208,24 +191,24 @@ func (r *postgresRepository) upsertDependency(exec boil.ContextExecutor, depende
 		// If it doesn't exist, insert it
 		err = dependency.Insert(context.Background(), exec, boil.Infer())
 		if err != nil {
-			msg := "Failed to insert service endpoint dependency"
-			r.logger.Errorw(msg,
-				"err", err.Error(),
-				"serviceEndpointID", dependency.ServiceEndpointID,
-				"dependencyServiceEndpointID", dependency.DependencyServiceEndpointID,
-			)
-			return errors.DatabaseError(msg, &err)
+			return errors.DatabaseError("Failed to insert service endpoint dependency",
+				errors.Details{
+					"serviceEndpointID":           dependency.ServiceEndpointID,
+					"dependencyServiceEndpointID": dependency.DependencyServiceEndpointID,
+				},
+				&err,
+			).Logged(r.logger)
 		}
 		return nil
 	} else if err != nil {
 		// If the get failed, return a failure
-		msg := "Failed to get service endpoint dependency"
-		r.logger.Errorw(msg,
-			"err", err.Error(),
-			"serviceEndpointID", dependency.ServiceEndpointID,
-			"dependencyServiceEndpointID", dependency.DependencyServiceEndpointID,
-		)
-		return errors.DatabaseError(msg, &err)
+		return errors.DatabaseError("Failed to get service endpoint dependency",
+			errors.Details{
+				"serviceEndpointID":           dependency.ServiceEndpointID,
+				"dependencyServiceEndpointID": dependency.DependencyServiceEndpointID,
+			},
+			&err,
+		).Logged(r.logger)
 	}
 	// If found, nothing to do but update the passed in model
 	dependency.ID = previousDependency.ID

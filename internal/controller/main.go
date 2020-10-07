@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"context"
+	"github.com/yashap/crius/internal/db"
 	"time"
 
 	ginzap "github.com/gin-contrib/zap"
@@ -10,10 +12,11 @@ import (
 )
 
 // SetupRouter sets up the Gin router
-func SetupRouter(serviceRepository service.Repository, logger *zap.SugaredLogger) *gin.Engine {
-	serviceController := NewService(serviceRepository)
+func SetupRouter(database db.Database, serviceRepository service.Repository, logger *zap.SugaredLogger) *gin.Engine {
+	ctx := context.Background()
+	serviceController := NewService(ctx, database, serviceRepository, logger)
 
-	// Run the server
+	// Set up routes
 	r := gin.New()
 	r.Use(ginzap.Ginzap(logger.Desugar(), time.RFC3339, true))
 	r.Use(ginzap.RecoveryWithZap(logger.Desugar(), true))

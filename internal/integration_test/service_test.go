@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/yashap/crius/internal/app"
@@ -14,11 +13,14 @@ import (
 	"github.com/yashap/crius/internal/integration_test/util"
 )
 
-var testDB *util.TestDB
+var crius *app.Crius
 
 func TestMain(m *testing.M) {
 	// TODO: test both Postgres AND MySQL
-	testDB = util.NewTestDB()
+	testDB := util.NewTestDB()
+	testDB.Database.Migrate()
+	criusApp := app.NewCrius(testDB.Database)
+	crius = &criusApp
 
 	testExitCode := m.Run()
 
@@ -29,12 +31,6 @@ func TestMain(m *testing.M) {
 func Test(t *testing.T) {
 	g := goblin.Goblin(t)
 	RegisterFailHandler(func(m string, _ ...int) { g.Fail(m) })
-	relativeMigrationsDir := "../../script/postgresql/migrations"
-	migrationsDir, err := filepath.Abs(relativeMigrationsDir)
-	if err != nil {
-		t.Errorf("Could not convert to absolute path: %s ; Error: %s", relativeMigrationsDir, err.Error())
-	}
-	crius := app.NewCrius(testDB.URL).MigrateDB(migrationsDir)
 
 	g.Describe("POST /services", func() {
 		g.It("Should create a new service", func() {
@@ -48,7 +44,7 @@ func Test(t *testing.T) {
 					},
 				},
 			}
-			response := util.HttpRequest(crius.Router(), "POST", "/services", postBody)
+			response := util.HttpRequest((*crius).Router(), "POST", "/services", postBody)
 			Expect(response.Code).To(Equal(200))
 			Expect(response.Body["id"]).To(Equal(float64(1)))
 		})
@@ -68,7 +64,7 @@ func Test(t *testing.T) {
 					},
 				},
 			}
-			response := util.HttpRequest(crius.Router(), "POST", "/services", postBody)
+			response := util.HttpRequest((*crius).Router(), "POST", "/services", postBody)
 			Expect(response.Code).To(Equal(200))
 			Expect(response.Body["id"]).To(Equal(float64(1)))
 		})

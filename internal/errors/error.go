@@ -1,8 +1,10 @@
 package errors
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,17 +13,27 @@ import (
 
 type Error struct {
 	Message    string
+	Details    Details
 	StatusCode int
 	SubCode    uuid.UUID
 	cause      *error // TODO: read about interfaces, should this be a pointer? Or is an interface automatically nil-able?
 }
 
-var sentinel error = errors.New("error did not have a cause")
+type Details map[string]interface{}
+
+var sentinel = errors.New("error did not have a cause")
 
 func (e *Error) Error() string {
+	detailsBytes, err := json.Marshal(e.Details)
+	var detailsString string
+	if err != nil {
+		detailsString = ""
+	} else {
+		detailsString = string(detailsBytes)
+	}
 	return fmt.Sprintf(
-		"%s (status code: %d, sub code: %s, cause: %s)",
-		e.Message, e.StatusCode, e.SubCode.String(), e.Unwrap(),
+		"%s (details: %s, status code: %d, sub code: %s, cause: %s)",
+		e.Message, detailsString, e.StatusCode, e.SubCode.String(), e.Unwrap(),
 	)
 }
 
@@ -30,6 +42,23 @@ func (e *Error) Unwrap() error {
 		return *e.cause
 	}
 	return sentinel
+}
+
+func (e *Error) Logged(logger *zap.SugaredLogger) *Error {
+	logDetails := make([]interface{}, len(e.Details)*2)
+	idx := 0
+	for k, v := range e.Details {
+		logDetails[idx] = k
+		idx++
+		logDetails[idx] = v
+		idx++
+	}
+	if e.cause != nil {
+		logDetails = append(logDetails, "err")
+		logDetails = append(logDetails, (*e.cause).Error())
+	}
+	logger.Errorw(e.Message, logDetails...)
+	return e
 }
 
 func SetResponse(err error, c *gin.Context) {
@@ -44,54 +73,60 @@ func SetResponse(err error, c *gin.Context) {
 			e.StatusCode,
 			gin.H{
 				"message":  e.Message,
-				"sub_code": e.SubCode.String(),
+				"details":  e.Details,
+				"sub_code": e.SubCode,
 				"cause":    cause,
 			},
 		)
 	} else {
-		SetResponse(UnclassifiedError("unclassified error", &err), c)
+		SetResponse(UnclassifiedError("unclassified error", Details{}, &err), c)
 	}
 }
 
-func InvalidInput(message string, cause *error) error {
+func InvalidInput(message string, details Details, cause *error) *Error {
 	return &Error{
 		Message:    message,
+		Details:    details,
 		StatusCode: http.StatusBadRequest,
 		SubCode:    uuid.MustParse("8fa6a458-07ad-40ec-a357-616c59ddb7ad"),
 		cause:      cause,
 	}
 }
 
-func ServiceNotFound(message string, cause *error) error {
+func ServiceNotFound(message string, details Details, cause *error) *Error {
 	return &Error{
 		Message:    message,
+		Details:    details,
 		StatusCode: http.StatusNotFound,
 		SubCode:    uuid.MustParse("4b281f39-2eaf-4e09-8b6f-ffb277ea0cbb"),
 		cause:      cause,
 	}
 }
 
-func EndpointNotFound(message string, cause *error) error {
+func InitializationError(message string, details Details, cause *error) *Error {
 	return &Error{
 		Message:    message,
-		StatusCode: http.StatusNotFound,
-		SubCode:    uuid.MustParse("0e86e5ad-e332-4962-b138-34dddade1dd1"),
+		Details:    details,
+		StatusCode: http.StatusInternalServerError,
+		SubCode:    uuid.MustParse("d4a0094d-bd7d-4471-871f-36b53c922044"),
 		cause:      cause,
 	}
 }
 
-func DatabaseError(message string, cause *error) error {
+func DatabaseError(message string, details Details, cause *error) *Error {
 	return &Error{
 		Message:    message,
+		Details:    details,
 		StatusCode: http.StatusInternalServerError,
 		SubCode:    uuid.MustParse("f4bb1d18-f4ca-4401-9a2a-8e201e707d5a"),
 		cause:      cause,
 	}
 }
 
-func UnclassifiedError(message string, cause *error) error {
+func UnclassifiedError(message string, details Details, cause *error) *Error {
 	return &Error{
 		Message:    message,
+		Details:    details,
 		StatusCode: http.StatusInternalServerError,
 		SubCode:    uuid.MustParse("4faf26fb-3996-4746-98ca-484fb27ffb23"),
 		cause:      cause,

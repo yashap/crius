@@ -60,7 +60,7 @@ func MakeServiceFromRequest(c *gin.Context) (Service, error) {
 	var s Service
 	err := c.ShouldBindJSON(&s)
 	if err != nil {
-		return s, errors.InvalidInput("failed to unmarshall json to Service", &err)
+		return s, errors.InvalidInput("failed to unmarshall json to Service", errors.Details{}, &err)
 	}
 	err = s.validate()
 	return s, err
@@ -110,10 +110,10 @@ func makeEndpointsFromEntities(endpoints []service.Endpoint) []Endpoint {
 
 func (s Service) validate() error {
 	if s.Code == nil {
-		return errors.InvalidInput("field 'code' on object Service is required", nil)
+		return errors.InvalidInput("required field on Service is missing", errors.Details{"field": "code"}, nil)
 	}
 	if s.Name == nil {
-		return errors.InvalidInput("field 'name' on object Service is required", nil)
+		return errors.InvalidInput("field 'name' on object Service is required", errors.Details{}, nil)
 	}
 	for _, endpoint := range *s.Endpoints {
 		err := endpoint.validate()
@@ -126,10 +126,10 @@ func (s Service) validate() error {
 
 func (e Endpoint) validate() error {
 	if e.Code == nil {
-		return errors.InvalidInput("field 'code' on object Endpoint is required", nil)
+		return errors.InvalidInput("required field on Endpoint is missing", errors.Details{"field": "code"}, nil)
 	}
 	if e.Name == nil {
-		return errors.InvalidInput("field 'name' on object Endpoint is required", nil)
+		return errors.InvalidInput("required field on Endpoint is missing", errors.Details{"field": "name"}, nil)
 	}
 	return nil
 }
