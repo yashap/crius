@@ -21,6 +21,10 @@ type fixture struct {
 var fixtures []fixture
 
 func TestMain(m *testing.M) {
+	os.Exit(testMain(m))
+}
+
+func testMain(m *testing.M) int {
 	pgDB := util.NewPostgresTestDB()
 	defer pgDB.Shutdown(true)
 	pgDB.Database.Migrate()
@@ -31,8 +35,7 @@ func TestMain(m *testing.M) {
 	mysqlDB.Database.Migrate()
 	fixtures = append(fixtures, fixture{app.NewCrius(mysqlDB.Database), "MySQL"})
 
-	testExitCode := m.Run()
-	os.Exit(testExitCode)
+	return m.Run()
 }
 
 func Test(t *testing.T) {
@@ -48,48 +51,68 @@ func runTests(g *goblin.G, crius app.Crius, label string) {
 		g.Describe("POST /services", func() {
 			g.It("Should create a new service", func() {
 				postBody := gin.H{
-					"code": "tops",
-					"name": "Teams, Organizations and Permissions Service",
+					"code": "nhl_games",
+					"name": "NHL Games Service ",
 					"endpoints": []gin.H{
 						{
-							"code": "GET /teams/{id}",
-							"name": "Get team by id",
-							"dependencies": gin.H{},
+							"code":                        "GET /games/{id}",
+							"name":                        "Get an NHL game by id",
+							"serviceEndpointDependencies": gin.H{},
 						},
 					},
 				}
 				response := util.HttpRequest(crius.Router(), "POST", "/services", postBody)
 				Expect(response.Code).To(Equal(200))
 				Expect(response.Body["id"]).To(Equal(float64(1)))
-				response = util.HttpRequest(crius.Router(), "GET", "/services/tops", nil)
-				Expect(response.Code).To(Equal(200))
-				Expect(util.JsonString(response.Body)).To(MatchJSON(util.JsonString(postBody)))
+				expectServiceToEqual(crius.Router(), "nhl_games", postBody)
 			})
 
 			g.It("Should update a service, adding an endpoint", func() {
 				postBody := gin.H{
-					"code": "tops",
-					"name": "Teams, Organizations and Permissions Service",
+					"code": "nhl_games",
+					"name": "NHL Games Service ",
 					"endpoints": []gin.H{
 						{
-							"code": "DELETE /teams/{id}",
-							"name": "Delete team by id",
-							"dependencies": gin.H{},
+							"code":                        "DELETE /games/{id}",
+							"name":                        "Delete an NHL game by id",
+							"serviceEndpointDependencies": gin.H{},
 						},
 						{
-							"code": "GET /teams/{id}",
-							"name": "Get team by id",
-							"dependencies": gin.H{},
+							"code":                        "GET /games/{id}",
+							"name":                        "Get an NHL game by id",
+							"serviceEndpointDependencies": gin.H{},
 						},
 					},
 				}
 				response := util.HttpRequest(crius.Router(), "POST", "/services", postBody)
 				Expect(response.Code).To(Equal(200))
 				Expect(response.Body["id"]).To(Equal(float64(1)))
-				response = util.HttpRequest(crius.Router(), "GET", "/services/tops", nil)
+				expectServiceToEqual(crius.Router(), "nhl_games", postBody)
+			})
+
+			g.It("Should update a service, removing an endpoint", func() {
+				postBody := gin.H{
+					"code": "nhl_games",
+					"name": "NHL Games Service ",
+					"endpoints": []gin.H{
+						{
+							"code":                        "DELETE /games/{id}",
+							"name":                        "Delete an NHL game by id",
+							"serviceEndpointDependencies": gin.H{},
+						},
+					},
+				}
+				response := util.HttpRequest(crius.Router(), "POST", "/services", postBody)
 				Expect(response.Code).To(Equal(200))
-				Expect(util.JsonString(response.Body)).To(MatchJSON(util.JsonString(postBody)))
+				Expect(response.Body["id"]).To(Equal(float64(1)))
+				expectServiceToEqual(crius.Router(), "nhl_games", postBody)
 			})
 		})
 	})
+}
+
+func expectServiceToEqual(router *gin.Engine, serviceCode string, expectedService map[string]interface{}) bool {
+	response := util.HttpRequest(router, "GET", "/services/"+serviceCode, nil)
+	Expect(response.Code).To(Equal(200))
+	return Expect(util.JsonString(response.Body)).To(MatchJSON(util.JsonString(expectedService)))
 }

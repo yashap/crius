@@ -18,6 +18,10 @@ type EndpointCode = string
 // EndpointName is the human-readable/friedly name of an Endpoint
 type EndpointName = string
 
+// ServiceEndpointDependencies is a map of Service Endpoints you depend on. Keys are the ServiceCode, for each service
+// you depend on, and values are the specific EndpointCodes within said Service that you depend on
+type ServiceEndpointDependencies = map[ServiceCode][]EndpointCode
+
 // Service represents a service
 type Service struct {
 	// Code is a unique code for the service. For example, "location_tracking" for a location tracking service
@@ -35,8 +39,8 @@ type Endpoint struct {
 	Code *EndpointCode `json:"code"`
 	// Name is a friendly name for the Endpoint. For example, "Create location" or "Get location by id"
 	Name *EndpointName `json:"name"`
-	// Dependencies is a map of Dependencies for a given Endpoint. Keys are service codes, values are lists of endpoint codes
-	Dependencies *map[ServiceCode][]EndpointCode `json:"dependencies"`
+	// ServiceEndpointDependencies lists the Service Endpoints you depend on
+	ServiceEndpointDependencies *ServiceEndpointDependencies `json:"serviceEndpointDependencies"`
 }
 
 // ToEntity converts a Service DTO into a Service Entity
@@ -89,15 +93,15 @@ func endpointsToEntities(endpoints []Endpoint) []service.Endpoint {
 	endpointEntities := make([]service.Endpoint, len(endpoints))
 	for idx, endpoint := range endpoints {
 		var dependencies map[ServiceCode][]EndpointCode
-		if endpoint.Dependencies == nil {
+		if endpoint.ServiceEndpointDependencies == nil {
 			dependencies = make(map[ServiceCode][]EndpointCode)
 		} else {
-			dependencies = *endpoint.Dependencies
+			dependencies = *endpoint.ServiceEndpointDependencies
 		}
 		endpointEntities[idx] = service.Endpoint{
-			Code:         *endpoint.Code,
-			Name:         *endpoint.Name,
-			Dependencies: dependencies,
+			Code:                        *endpoint.Code,
+			Name:                        *endpoint.Name,
+			ServiceEndpointDependencies: dependencies,
 		}
 	}
 	return endpointEntities
@@ -108,9 +112,9 @@ func makeEndpointsFromEntities(endpoints []service.Endpoint) []Endpoint {
 	for idx := range endpoints {
 		endpoint := endpoints[idx]
 		endpointDTO := Endpoint{
-			Code:         &endpoint.Code,
-			Name:         &endpoint.Name,
-			Dependencies: &endpoint.Dependencies,
+			Code:                        &endpoint.Code,
+			Name:                        &endpoint.Name,
+			ServiceEndpointDependencies: &endpoint.ServiceEndpointDependencies,
 		}
 		endpointDTOs[idx] = endpointDTO
 	}

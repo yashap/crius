@@ -37,7 +37,7 @@ func (r *mysqlRepository) Save(ctx context.Context, s *Service) error {
 		if err != nil {
 			return err
 		}
-		for depServiceCode, depEndpointCodes := range endpoint.Dependencies {
+		for depServiceCode, depEndpointCodes := range endpoint.ServiceEndpointDependencies {
 			depService, err := r.FindByCode(ctx, depServiceCode)
 			if err != nil {
 				return err
@@ -251,9 +251,9 @@ func (r *mysqlRepository) serviceDAOToEntity(ctx context.Context, serviceDAO dao
 			dependencies[depServiceDAO.Code] = depEndpoints
 		}
 		endpoints[idx] = Endpoint{
-			Code:         endpointDAO.Code,
-			Name:         endpointDAO.Name,
-			Dependencies: dependencies,
+			Code:                        endpointDAO.Code,
+			Name:                        endpointDAO.Name,
+			ServiceEndpointDependencies: dependencies,
 		}
 	}
 	service := Service{
