@@ -106,5 +106,5 @@ func (sc *Service) GetAll(c *gin.Context) {
 		errors.SetResponse(err, c)
 		return
 	}
-	c.JSON(http.StatusNotImplemented, dto.MakeServicesFromEntities(services))
+	c.JSON(http.StatusOK, dto.MakeServicesFromEntities(services))
 }

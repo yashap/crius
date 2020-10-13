@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"github.com/gin-contrib/cors"
 	"github.com/yashap/crius/internal/db"
 	"time"
 
@@ -20,6 +21,7 @@ func SetupRouter(database db.Database, serviceRepository service.Repository, log
 	r := gin.New()
 	r.Use(ginzap.Ginzap(logger.Desugar(), time.RFC3339, true))
 	r.Use(ginzap.RecoveryWithZap(logger.Desugar(), true))
+	r.Use(cors.Default()) // TODO more restrictive
 	r.POST("/services", serviceController.Create)
 	r.GET("/services", serviceController.GetAll)
 	r.GET("/services/:code", serviceController.GetByCode)

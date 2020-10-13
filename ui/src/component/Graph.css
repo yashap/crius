@@ -1,0 +1,11 @@
+.Graph {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex:2;
+}
+
+.Graph>div:first-of-type {
+    height: 100%;
+    width: 100%;
+}
