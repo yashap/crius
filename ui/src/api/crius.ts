@@ -11,10 +11,14 @@ class Crius {
   }
 
   async getAllServices() {
-    const response = await this.client.get<ServiceDTO[]>('/services');
-    const serviceDTOs: ServiceDTO[] = response.result ?? [];
+    const response = await this.client.get<ServicesDTO>('/services');
+    const serviceDTOs: ServiceDTO[] = response.result ? response.result.data : [];
     return List(serviceDTOs).map(serviceDTO => toDomainModel(serviceDTO));
   }
+}
+
+interface ServicesDTO {
+  data: ServiceDTO[];
 }
 
 interface ServiceDTO {

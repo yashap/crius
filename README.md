@@ -22,6 +22,7 @@ make service/run
 make service/postgres/run
 
 # Run the UI. Will open in a browser, and you must have the backend running already (i.e. `make run`)
+nvm use
 make ui/run
 
 # Tidy up code and run all unit and integration tests

@@ -22,6 +22,10 @@ type EndpointName = string
 // you depend on, and values are the specific EndpointCodes within said Service that you depend on
 type ServiceEndpointDependencies = map[ServiceCode][]EndpointCode
 
+type ServicesResponse struct {
+	Data []Service `json:"data"`
+}
+
 // Service represents a service
 type Service struct {
 	// Code is a unique code for the service. For example, "location_tracking" for a location tracking service
@@ -81,12 +85,12 @@ func MakeServiceFromEntity(s service.Service) Service {
 }
 
 // MakeServicesFromEntities constructs Service DTOs from Service Entities
-func MakeServicesFromEntities(svcs []service.Service) []Service {
+func MakeServicesFromEntities(svcs []service.Service) ServicesResponse {
 	dtos := make([]Service, len(svcs))
 	for idx, s := range svcs {
 		dtos[idx] = MakeServiceFromEntity(s)
 	}
-	return dtos
+	return ServicesResponse{Data: dtos}
 }
 
 func endpointsToEntities(endpoints []Endpoint) []service.Endpoint {

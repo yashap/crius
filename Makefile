@@ -108,7 +108,7 @@ service/generate:
 db/mysql/run:
 	@docker rm -f criusmysql > /dev/null 2>&1 || true
 	docker run --name criusmysql -e MYSQL_ROOT_PASSWORD=$(MYSQL_ROOT_PASSWORD) -e MYSQL_DATABASE=$(MYSQL_DB) -p $(MYSQL_PORT):$(MYSQL_PORT) -d mysql:8 -h 127.0.0.1
-	@$(MAKE) db/mysql/await-db
+	@$(MAKE) db/mysql/await
 	@$(MAKE) db/mysql/create-user
 
 .PHONY: db/mysql/create-user
