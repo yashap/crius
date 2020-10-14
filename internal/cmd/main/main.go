@@ -1,19 +1,25 @@
 package main
 
 import (
-	"log"
+	"github.com/yashap/crius/internal/db"
+	"github.com/yashap/crius/internal/errors"
 	"os"
 
-	"github.com/xo/dburl"
 	"github.com/yashap/crius/internal/app"
 )
 
 func main() {
-	rawDBURL := os.Getenv("CRIUS_DB_URL")
-	dbURL, err := dburl.Parse(rawDBURL)
-	if err != nil {
-		log.Fatalf("Failed to parse DB URL: %s", rawDBURL)
+	dbURL := getOrPanic("CRIUS_DB_URL")
+	migrationDir := getOrPanic("CRIUS_MIGRATIONS_DIR")
+	database := db.NewDatabase(dbURL, migrationDir)
+	database.Migrate()
+	app.NewCrius(database).ListenAndServe()
+}
+
+func getOrPanic(s string) string {
+	envVar := os.Getenv(s)
+	if envVar == "" {
+		panic(errors.InitializationError("environment variable not set", errors.Details{"envVar": s}, nil))
 	}
-	migrationDir := os.Getenv("CRIUS_MIGRATIONS_DIR")
-	app.NewCrius(dbURL).MigrateDB(migrationDir).ListenAndServe()
+	return envVar
 }

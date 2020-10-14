@@ -7,11 +7,7 @@ Crius is a work-in-progress, open source project, that helps you manage dependen
 
 * [go v1.14](https://golang.org/dl/)
 * [Docker desktop](https://docs.docker.com/desktop/)
-* [SQLBoiler](https://github.com/volatiletech/sqlboiler)
-    * Run the following commands:
-        * `GO111MODULE=off go get -u -t github.com/volatiletech/sqlboiler`
-        * `GO111MODULE=off go get github.com/volatiletech/sqlboiler/drivers/sqlboiler-psql`
-        * `GO111MODULE=off go get github.com/volatiletech/sqlboiler/drivers/sqlboiler-mysql`
+* [Node Version Manager](https://github.com/nvm-sh/nvm)
 
 ### Dev Workflow
 
@@ -20,10 +16,13 @@ Crius is a work-in-progress, open source project, that helps you manage dependen
 make help
 
 # Run the DB and HTTP server (will wipe local DB)
-make run
+make service/run
 
-# Just run the HTTP server (assumes DB is already running)
-make run-service
+# Just run the HTTP server (assumes DB is already running, won't wipe the DB)
+make service/postgres/run
+
+# Run the UI. Will open in a browser, and you must have the backend running already (i.e. `make run`)
+make ui/run
 
 # Tidy up code and run all unit and integration tests
 make tidy test
@@ -31,7 +30,15 @@ make tidy test
 
 ### Modifying the DB Schema
 
-TODO - explain the process
+TODO: explain the process
+
+You'll need to have the following additional dependencies installed:
+
+* [SQLBoiler](https://github.com/volatiletech/sqlboiler)
+    * `GO111MODULE=off go get -u -t github.com/volatiletech/sqlboiler`
+    * `GO111MODULE=off go get github.com/volatiletech/sqlboiler/drivers/sqlboiler-psql`
+    * `GO111MODULE=off go get github.com/volatiletech/sqlboiler/drivers/sqlboiler-mysql`
+* TODO link to migration tool
 
 ## Special Thanks
 
