@@ -3,122 +3,230 @@ package service
 import (
 	"context"
 	"database/sql"
-	"github.com/jmoiron/sqlx"
 	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
-	pgdao "github.com/yashap/crius/internal/db/postgresql/dao"
+	"github.com/yashap/crius/internal/db"
+	dao "github.com/yashap/crius/internal/db/postgresql/dao"
 	"github.com/yashap/crius/internal/errors"
 	"go.uber.org/zap"
 )
 
 type postgresRepository struct {
-	db     *sqlx.DB
-	logger *zap.SugaredLogger
+	database db.Database
+	logger   *zap.SugaredLogger
 }
 
-func (r *postgresRepository) Save(s *Service) error {
-	// TODO: move transaction handling to top level, pass through in Context
-	tx, err := r.db.BeginTx(context.Background(), nil)
+func (r *postgresRepository) Save(ctx context.Context, s *Service) error {
+	exec := r.database.GetExecutor(ctx)
+	serviceDAO := dao.Service{Code: s.Code, Name: s.Name}
+	err := r.upsertService(ctx, &serviceDAO)
 	if err != nil {
-		msg := "Failed to begin transaction when saving service"
-		r.logger.Errorw(msg, "err", err.Error(), "serviceCode", s.Code)
-		return errors.DatabaseError(msg, &err)
-	}
-	serviceDAO := pgdao.Service{Code: s.Code, Name: s.Name}
-	err = r.upsertService(tx, &serviceDAO)
-	if err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	s.ID = &serviceDAO.ID
 	endpointIDs := make([]interface{}, len(s.Endpoints))
 	for idx, endpoint := range s.Endpoints {
-		endpointDAO := pgdao.ServiceEndpoint{
+		endpointDAO := dao.ServiceEndpoint{
 			ServiceID: serviceDAO.ID,
 			Code:      endpoint.Code,
 			Name:      endpoint.Name,
 		}
-		err = r.upsertEndpoint(tx, &endpointDAO)
+		err = r.upsertEndpoint(ctx, &endpointDAO)
 		endpoint.ID = &endpointDAO.ID
 		endpointIDs[idx] = endpointDAO.ID
 		if err != nil {
-			_ = tx.Rollback()
 			return err
 		}
-		for depServiceCode, depEndpointCodes := range endpoint.Dependencies {
-			depService, err := r.FindByCode(depServiceCode)
+		for depServiceCode, depEndpointCodes := range endpoint.ServiceEndpointDependencies {
+			depService, err := r.FindByCode(ctx, depServiceCode)
 			if err != nil {
-				_ = tx.Rollback()
 				return err
 			}
 			for _, depEndpointCode := range depEndpointCodes {
-				depEndpoint, err := r.findEndpointByServiceIDAndCode(tx, *depService.ID, depEndpointCode)
+				depEndpoint, err := r.findEndpointByServiceIDAndCode(ctx, *depService.ID, depEndpointCode)
 				if err != nil {
-					_ = tx.Rollback()
 					return err
 				}
-				dependencyDAO := pgdao.ServiceEndpointDependency{
+				dependencyDAO := dao.ServiceEndpointDependency{
 					ServiceEndpointID:           endpointDAO.ID,
 					DependencyServiceEndpointID: depEndpoint.ID,
 				}
-				err = r.upsertDependency(tx, &dependencyDAO)
+				err = r.upsertDependency(ctx, &dependencyDAO)
 				if err != nil {
-					_ = tx.Rollback()
 					return err
 				}
 			}
 		}
 	}
 	// We want to fully replace the service, so remove any endpoints that no longer exist
-	_, err = pgdao.ServiceEndpoints(
+	_, err = dao.ServiceEndpoints(
 		qm.Where("service_id = ?", serviceDAO.ID),
 		qm.AndNotIn("id not in ?", endpointIDs...),
-	).DeleteAll(context.Background(), tx)
+	).DeleteAll(ctx, exec)
 	if err != nil {
-		msg := "Failed to delete endpoints by ids"
-		r.logger.Errorw(msg, "err", err.Error(), "ids", endpointIDs)
-		_ = tx.Rollback()
-		return errors.DatabaseError(msg, &err)
+		return errors.DatabaseError("Failed to delete endpoints by ids",
+			errors.Details{"ids": endpointIDs}, &err,
+		).Logged(r.logger)
 	}
-	_ = tx.Commit()
-	// TODO: remove any dangling dependencies (that should no longer exist)
 	return nil
 }
 
-func (r *postgresRepository) FindByCode(code Code) (*Service, error) {
-	serviceDAO, err := pgdao.Services(
+func (r *postgresRepository) FindByCode(ctx context.Context, code Code) (*Service, error) {
+	exec := r.database.GetExecutor(ctx)
+	serviceDAO, err := dao.Services(
 		qm.Load(qm.Rels(
-			pgdao.ServiceRels.ServiceEndpoints,
-			pgdao.ServiceEndpointRels.ServiceEndpointDependencies,
+			dao.ServiceRels.ServiceEndpoints,
+			dao.ServiceEndpointRels.ServiceEndpointDependencies,
 		)),
 		qm.Where("code = ?", code),
-	).One(context.Background(), r.db)
+	).One(ctx, exec)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
-		msg := "Failed to find service by code"
-		r.logger.Errorw(msg, "err", err.Error(), "code", code)
-		return nil, errors.DatabaseError(msg, &err)
+		return nil, errors.DatabaseError("Failed to find service by code",
+			errors.Details{"code": code}, &err,
+		).Logged(r.logger)
 	}
+	service, err := r.serviceDAOToEntity(ctx, *serviceDAO)
+	if err != nil {
+		return nil, err
+	}
+	return &service, nil
+}
+
+func (r *postgresRepository) FindAll(ctx context.Context) ([]Service, error) {
+	exec := r.database.GetExecutor(ctx)
+	serviceDAOs, err := dao.Services(
+		qm.Load(qm.Rels(
+			dao.ServiceRels.ServiceEndpoints,
+			dao.ServiceEndpointRels.ServiceEndpointDependencies,
+		)),
+	).All(ctx, exec)
+	if err != nil {
+		return nil, errors.DatabaseError("Failed to find all services", errors.Details{}, &err).Logged(r.logger)
+	}
+	services := make([]Service, len(serviceDAOs))
+	// TODO make this more efficient (bulk fetch, provide data?)
+	for idx, serviceDAO := range serviceDAOs {
+		service, err := r.serviceDAOToEntity(ctx, *serviceDAO)
+		if err != nil {
+			return nil, err
+		}
+		services[idx] = service
+	}
+	return services, nil
+}
+
+func (r *postgresRepository) findEndpointByServiceIDAndCode(
+	ctx context.Context,
+	serviceID int64,
+	code EndpointCode,
+) (*dao.ServiceEndpoint, error) {
+	exec := r.database.GetExecutor(ctx)
+	depEndpoint, err := dao.ServiceEndpoints(
+		qm.Where("service_id = ?", serviceID),
+		qm.And("code = ?", code),
+	).One(ctx, exec)
+	if err != nil {
+		return nil, errors.DatabaseError("Failed to find endpoint by service id and code",
+			errors.Details{"serviceId": serviceID, "code": code}, &err,
+		).Logged(r.logger)
+	}
+	return depEndpoint, nil
+}
+
+func (r *postgresRepository) upsertService(ctx context.Context, service *dao.Service) error {
+	exec := r.database.GetExecutor(ctx)
+	err := service.Upsert(
+		ctx,
+		exec,
+		true,
+		[]string{"code"},
+		boil.Whitelist("name"),
+		boil.Infer(),
+	)
+	if err != nil {
+		return errors.DatabaseError("Failed to upsert service",
+			errors.Details{"serviceCode": service.Code}, &err,
+		).Logged(r.logger)
+	}
+	return nil
+}
+
+func (r *postgresRepository) upsertEndpoint(ctx context.Context, endpoint *dao.ServiceEndpoint) error {
+	exec := r.database.GetExecutor(ctx)
+	err := endpoint.Upsert(
+		ctx,
+		exec,
+		true,
+		[]string{"service_id", "code"},
+		boil.Whitelist("name"),
+		boil.Infer(),
+	)
+	if err != nil {
+		return errors.DatabaseError("Failed to upsert service endpoint",
+			errors.Details{"serviceID": endpoint.ServiceID, "code": endpoint.Code}, &err,
+		).Logged(r.logger)
+	}
+	return nil
+}
+
+func (r *postgresRepository) upsertDependency(ctx context.Context, dependency *dao.ServiceEndpointDependency) error {
+	// We have nothing to update, so upsert won't work. Instead we do a get, and maybe insert
+	exec := r.database.GetExecutor(ctx)
+	previousDependency, err := dao.ServiceEndpointDependencies(
+		qm.Where("service_endpoint_id = ?", dependency.ServiceEndpointID),
+		qm.And("dependency_service_endpoint_id = ?", dependency.DependencyServiceEndpointID),
+	).One(ctx, exec)
+	if err == sql.ErrNoRows {
+		// If it doesn't exist, insert it
+		err = dependency.Insert(ctx, exec, boil.Infer())
+		if err != nil {
+			return errors.DatabaseError("Failed to insert service endpoint dependency",
+				errors.Details{
+					"serviceEndpointID":           dependency.ServiceEndpointID,
+					"dependencyServiceEndpointID": dependency.DependencyServiceEndpointID,
+				},
+				&err,
+			).Logged(r.logger)
+		}
+		return nil
+	} else if err != nil {
+		// If the get failed, return a failure
+		return errors.DatabaseError("Failed to get service endpoint dependency",
+			errors.Details{
+				"serviceEndpointID":           dependency.ServiceEndpointID,
+				"dependencyServiceEndpointID": dependency.DependencyServiceEndpointID,
+			},
+			&err,
+		).Logged(r.logger)
+	}
+	// If found, nothing to do but update the passed in model
+	dependency.ID = previousDependency.ID
+	return nil
+}
+
+func (r *postgresRepository) serviceDAOToEntity(ctx context.Context, serviceDAO dao.Service) (Service, error) {
+	exec := r.database.GetExecutor(ctx)
 	endpoints := make([]Endpoint, len(serviceDAO.R.ServiceEndpoints))
 	for idx, endpointDAO := range serviceDAO.R.ServiceEndpoints {
 		dependencies := make(map[Code][]EndpointCode)
 		for _, dependencyDAO := range endpointDAO.R.ServiceEndpointDependencies {
-			depEndpointDAO, err := pgdao.ServiceEndpoints(
+			depEndpointDAO, err := dao.ServiceEndpoints(
 				qm.Where("id = ?", dependencyDAO.DependencyServiceEndpointID),
-			).One(context.Background(), r.db)
+			).One(ctx, exec)
 			if err != nil {
-				msg := "Failed to find service endpoint by id"
-				r.logger.Errorw(msg, "err", err.Error(), "id", dependencyDAO.DependencyServiceEndpointID)
-				return nil, errors.DatabaseError(msg, &err)
+				return Service{}, errors.DatabaseError("Failed to find service endpoint by id",
+					errors.Details{"id": dependencyDAO.DependencyServiceEndpointID}, &err,
+				).Logged(r.logger)
 			}
-			depServiceDAO, err := pgdao.Services(
+			depServiceDAO, err := dao.Services(
 				qm.Where("id = ?", depEndpointDAO.ServiceID),
-			).One(context.Background(), r.db)
+			).One(ctx, exec)
 			if err != nil {
-				msg := "Failed to find service by id"
-				r.logger.Errorw(msg, "err", err.Error(), "id", depEndpointDAO.ServiceID)
-				return nil, errors.DatabaseError(msg, &err)
+				return Service{}, errors.DatabaseError("Failed to find service by id",
+					errors.Details{"id": depEndpointDAO.ServiceID}, &err,
+				).Logged(r.logger)
 			}
 			depEndpoints, ok := dependencies[depServiceDAO.Code]
 			if ok {
@@ -129,9 +237,9 @@ func (r *postgresRepository) FindByCode(code Code) (*Service, error) {
 			dependencies[depServiceDAO.Code] = depEndpoints
 		}
 		endpoints[idx] = Endpoint{
-			Code:         endpointDAO.Code,
-			Name:         endpointDAO.Name,
-			Dependencies: dependencies,
+			Code:                        endpointDAO.Code,
+			Name:                        endpointDAO.Name,
+			ServiceEndpointDependencies: dependencies,
 		}
 	}
 	service := Service{
@@ -140,94 +248,5 @@ func (r *postgresRepository) FindByCode(code Code) (*Service, error) {
 		Name:      serviceDAO.Name,
 		Endpoints: endpoints,
 	}
-	return &service, nil
-}
-
-func (r *postgresRepository) findEndpointByServiceIDAndCode(
-	exec boil.ContextExecutor,
-	serviceID int64,
-	code EndpointCode,
-) (*pgdao.ServiceEndpoint, error) {
-	depEndpoint, err := pgdao.ServiceEndpoints(
-		qm.Where("service_id = ?", serviceID),
-		qm.And("code = ?", code),
-	).One(context.Background(), exec)
-	if err != nil {
-		msg := "Failed to find endpoint by service id and code"
-		r.logger.Errorw(msg,
-			"err", err.Error(),
-			"serviceId", serviceID,
-			"code", code,
-		)
-		return nil, errors.DatabaseError(msg, &err)
-	}
-	return depEndpoint, nil
-}
-
-func (r *postgresRepository) upsertService(exec boil.ContextExecutor, service *pgdao.Service) error {
-	err := service.Upsert(
-		context.Background(),
-		exec,
-		true,
-		[]string{"code"},
-		boil.Whitelist("name"),
-		boil.Infer(),
-	)
-	if err != nil {
-		msg := "Failed to upsert service"
-		r.logger.Errorw(msg, "err", err.Error(), "serviceCode", service.Code)
-		return errors.DatabaseError(msg, &err)
-	}
-	return nil
-}
-
-func (r *postgresRepository) upsertEndpoint(exec boil.ContextExecutor, endpoint *pgdao.ServiceEndpoint) error {
-	err := endpoint.Upsert(
-		context.Background(),
-		exec,
-		true,
-		[]string{"service_id", "code"},
-		boil.Whitelist("name"),
-		boil.Infer(),
-	)
-	if err != nil {
-		msg := "Failed to upsert endpoint"
-		r.logger.Errorw(msg, "err", err.Error(), "serviceId", endpoint.ServiceID, "code", endpoint.Code)
-		return errors.DatabaseError(msg, &err)
-	}
-	return nil
-}
-
-func (r *postgresRepository) upsertDependency(exec boil.ContextExecutor, dependency *pgdao.ServiceEndpointDependency) error {
-	// We have nothing to update, so upsert won't work. Instead we do a get, and maybe insert
-	previousDependency, err := pgdao.ServiceEndpointDependencies(
-		qm.Where("service_endpoint_id = ?", dependency.ServiceEndpointID),
-		qm.And("dependency_service_endpoint_id = ?", dependency.DependencyServiceEndpointID),
-	).One(context.Background(), exec)
-	if err == sql.ErrNoRows {
-		// If it doesn't exist, insert it
-		err = dependency.Insert(context.Background(), exec, boil.Infer())
-		if err != nil {
-			msg := "Failed to insert service endpoint dependency"
-			r.logger.Errorw(msg,
-				"err", err.Error(),
-				"serviceEndpointID", dependency.ServiceEndpointID,
-				"dependencyServiceEndpointID", dependency.DependencyServiceEndpointID,
-			)
-			return errors.DatabaseError(msg, &err)
-		}
-		return nil
-	} else if err != nil {
-		// If the get failed, return a failure
-		msg := "Failed to get service endpoint dependency"
-		r.logger.Errorw(msg,
-			"err", err.Error(),
-			"serviceEndpointID", dependency.ServiceEndpointID,
-			"dependencyServiceEndpointID", dependency.DependencyServiceEndpointID,
-		)
-		return errors.DatabaseError(msg, &err)
-	}
-	// If found, nothing to do but update the passed in model
-	dependency.ID = previousDependency.ID
-	return nil
+	return service, nil
 }

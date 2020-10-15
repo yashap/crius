@@ -13,7 +13,7 @@ import (
 )
 
 // Migrate performs all database migrations
-func Migrate(db *sqlx.DB, dbURL *dburl.URL, migrationDir string) {
+func Migrate(db *sqlx.DB, dbURL dburl.URL, migrationDir string) {
 	if dbURL.Query().Get("multiStatements") != "true" {
 		log.Fatal("For MySQL, your DB URL must set the query param multiStatements=true")
 	}

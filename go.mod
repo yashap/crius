@@ -7,6 +7,7 @@ require (
 	github.com/containerd/continuity v0.0.0-20200710164510-efbc4488d8fe // indirect
 	github.com/franela/goblin v0.0.0-20200825194134-80c0062ed6cd
 	github.com/friendsofgo/errors v0.9.2
+	github.com/gin-contrib/cors v1.3.1
 	github.com/gin-contrib/zap v0.0.1
 	github.com/gin-gonic/gin v1.6.3
 	github.com/go-playground/validator/v10 v10.3.0 // indirect

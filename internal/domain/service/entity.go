@@ -12,6 +12,10 @@ type EndpointCode = string
 // EndpointName is the human-readable/friedly name of an Endpoint
 type EndpointName = string
 
+// ServiceEndpointDependencies is a map of Service Endpoints you depend on. Keys are the Service Code, for each service
+// you depend on, and values are the specific EndpointCodes within said Service that you depend on
+type ServiceEndpointDependencies = map[Code][]EndpointCode
+
 // Service represents a service
 type Service struct {
 	// ID uniquely identifies this service
@@ -33,8 +37,8 @@ type Endpoint struct {
 	Code EndpointCode
 	// Name is a friendly name for the Endpoint. For example, "Create location" or "Get location by id"
 	Name EndpointName
-	// Dependencies is a map of Dependencies for a given Endpoint. Keys are service codes, values are lists of endpoint codes
-	Dependencies map[Code][]EndpointCode
+	// ServiceEndpointDependencies lists the Service Endpoints you depend on
+	ServiceEndpointDependencies ServiceEndpointDependencies
 }
 
 // MakeService constructs a Service
